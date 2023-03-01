@@ -5,6 +5,7 @@ observation, info = env.reset(seed=42)
 
 success_threashold=500
 success_eps=5
+
 def run_episode(env, parameters):
     observation = env.reset()
     observation = np.array(observation[0])
@@ -42,18 +43,17 @@ def test_policy(env, parameters):
             successs_count+=1
     return successs_count/success_eps>0.8
 
-
-
-bestparams = None
-bestreward = 0
-for _ in range(10000):
-    parameters = np.random.rand(4) * 2 - 1
-    reward = run_episode(env,parameters)
-    if reward > bestreward:
-        bestreward = reward
-        print("best reward:",bestreward)
-        bestparams = parameters
-        # considered solved if the agent lasts 200 timesteps
-        if reward == success_threashold:
-            print(test_policy(env,parameters))
-            break
+if __name__ == "__main__":
+    bestparams = None
+    bestreward = 0
+    for _ in range(10000):
+        parameters = np.random.rand(4) * 2 - 1
+        reward = run_episode(env,parameters)
+        if reward > bestreward:
+            bestreward = reward
+            print("best reward:",bestreward)
+            bestparams = parameters
+            # considered solved if the agent lasts 200 timesteps
+            if reward == success_threashold:
+                print(test_policy(env,parameters))
+                break
