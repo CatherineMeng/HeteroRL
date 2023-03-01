@@ -1,7 +1,7 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/CartPole.fpga_emu.dir/CartPole.cpp.o"
-  "../CartPole.fpga_emu.pdb"
   "../CartPole.fpga_emu"
+  "../CartPole.fpga_emu.pdb"
+  "CMakeFiles/CartPole.fpga_emu.dir/CartPole.cpp.o"
 )
 
 # Per-language clean rules from dependency scanning.

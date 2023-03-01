@@ -1,7 +1,7 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/CartPole_report.a.dir/CartPole.cpp.o"
-  "../CartPole_report.a.pdb"
   "../CartPole_report.a"
+  "../CartPole_report.a.pdb"
+  "CMakeFiles/CartPole_report.a.dir/CartPole.cpp.o"
 )
 
 # Per-language clean rules from dependency scanning.
