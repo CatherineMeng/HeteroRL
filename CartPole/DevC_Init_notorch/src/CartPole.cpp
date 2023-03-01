@@ -18,6 +18,7 @@ size_t num_repetitions = 1;
 size_t vector_size = 10000;
 typedef std::vector<float> FloatVector; 
 typedef std::vector<int> IntVector; 
+auto success_threashold=200;
 
 // Create an exception handler for asynchronous SYCL exceptions
 static auto exception_handler = [](sycl::exception_list e_list) {
@@ -129,6 +130,7 @@ const double kPi = 3.1415926535898;
      } else {
        if (steps_beyond_done == 0) {
         //  AT_ASSERT(false); // Can't do this
+        reward = 0;
         return;
        }
      }
@@ -139,95 +141,126 @@ const double kPi = 3.1415926535898;
 //************************************
 // Policy for CartPole env on FPGA. Does not depend on state, random
 //************************************
-void BasicPolicy(queue &q, int in_signal, FloatVector &state_vector,
+void BasicPolicy(queue &q,FloatVector &state_vector, FloatVector &param_vector, 
                IntVector &action) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{action.size()};
+  // std::cout << "action.size():"<< action.size()<<"\n";
 
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
   // goes out of scope.
   buffer a_buf(state_vector);
-  buffer sum_buf(action.data(), num_items);
+  buffer b_buf(param_vector);
+  // buffer sum_buf(action.data(), num_items);
+  buffer sum_buf(action);
+  // std::cout << "buffer allocated"<<"\n";
 
     // Submit a command group to the queue by a lambda function that contains the
     // data access permission and device computation (kernel).
-    q.submit([&](handler &h) mutable{
+    q.submit([&](handler &h){
       // Create an accessor for each buffer with access permission: read, write or
       // read/write. The accessor is a mean to access the memory in the buffer.
       accessor a(a_buf, h, read_only);
+      accessor b(b_buf, h, read_only);
       accessor sum(sum_buf, h, write_only, no_init);
-      // accessor b(b_buf, h, read_only);
+
       h.single_task([=]() { 
-      	if (in_signal%2==0)sum[0]=1;
-      	else sum[0]=0;  }
+      	// if (in_signal%2==0){sum[0]=1;}
+      	// else sum[0]=0;  
+        float wsum=0.0;
+        for (int i=0;i<4;i++){
+          wsum+=a[i]*b[i];
+        }
+        if (wsum<0){sum[0]=0;}
+        else sum[0]=1;
+        }
       	);
     });
   // Wait until compute tasks on GPU done
   q.wait();
 }
 
- int main() {
+int main() {
 //   torch::Tensor tensor = torch::rand({2, 3});
 //   std::cout << tensor << std::endl;
 
-#if FPGA_EMULATOR
-  // DPC++ extension: FPGA emulator selector on systems without FPGA card.
-  ext::intel::fpga_emulator_selector d_selector;
-#elif FPGA
-  // DPC++ extension: FPGA selector on systems with FPGA card.
-  ext::intel::fpga_selector d_selector;
-#else
-  // The default device selector will select the most performant device.
-  default_selector d_selector;
-#endif
+  #if FPGA_EMULATOR
+    // DPC++ extension: FPGA emulator selector on systems without FPGA card.
+    ext::intel::fpga_emulator_selector d_selector;
+  #elif FPGA
+    // DPC++ extension: FPGA selector on systems with FPGA card.
+    ext::intel::fpga_selector d_selector;
+  #else
+    // The default device selector will select the most performant device.
+    default_selector d_selector;
+  #endif
 
   std::vector<float> rewards;
   FloatVector state_vec;
+  FloatVector param_vec;
   state_vec.resize(4, 0);
+  param_vec.resize(4, 0);
+
   auto env = CartPole();
   double running_reward = 10.0;
   IntVector a;
-  a.resize(1);
+  a.resize(2);
+  FloatVector bestparams;
+  bestparams.resize(4, 0);
+  auto bestreward = 0;
+  auto totalreward=0;
 	for (size_t episode = 0;; episode++) {
 		 env.reset();
 		 auto state = env.getState();
-
+     totalreward=0;
 		 int t = 0;
-		 for (; t < 100; t++) {
+    // Randomly initilize policy params
+    for (int i=0; i<4; i++){
+      param_vec[i] = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+    }
+
+		for (; t < success_threashold; t++) {
 		  //  int action = -1;
-      a[0]=-1;
+      a[0]=0;
 		   // if (t%2==0) action = 1; //naive policy
 		  // generate action given state
 		  try {
 		    queue q(d_selector, exception_handler);
-
 		    // Print out the device information used for the kernel code.
 		    std::cout << "Running on device: "
 		              << q.get_device().get_info<info::device::name>() << "\n";
-
         // a[0]=action;
 		    // Vector addition in DPC++
-		    BasicPolicy(q, t, state_vec, a);
+		    BasicPolicy(q, state_vec, param_vec, a);
 		    std::cout << "action: " << a[0] << "\n";
 		  } catch (exception const &e) {
 		    std::cout << "An exception is caught for Basic Policy.\n";
 		    std::terminate();
 		  }
-		   env.step(a[0]);
-		   state = env.getState();
-		   	for (int i=0;i<4;i++){state_vec[i] = state[i];}
-		   auto reward = env.getReward();
-		   auto done = env.isDone();
-
+		  env.step(a[0]);
+		  state = env.getState();
+		  for (int i=0;i<4;i++){state_vec[i] = state[i];}
+		  auto reward = env.getReward();
+      std::cout << "reward: " << reward << "\n";
+		  auto done = env.isDone();
+      totalreward += reward;
 		  //  rewards.push_back(reward);
-		   if (done)
-		     break;
+		  if (done)
+		    break;
 		 }
-		 running_reward = running_reward * 0.99 + t * 0.01;
-		  if (episode % 10 == 0) {
-	       printf("Episode %i\tLast length: %5d\tAverage length: %.2f\n",
-	               episode, t, running_reward);
-	      }
+     if (totalreward>bestreward){
+      bestreward = totalreward;
+      std::cout << "bestreward: " << bestreward << "\n";
+      bestparams = param_vec;
+      if(bestreward==success_threashold){ //Success threshold: cartpole standss for 100?200? timesteps
+        break;
+      }
+     }
+		//  running_reward = running_reward * 0.99 + t * 0.01;
+		//   if (episode % 10 == 0) {
+	  //      printf("Episode %i\tLast length: %5d\tAverage length: %.2f\n",
+	  //              episode, t, running_reward);
+	  //     }
 	}
 }
