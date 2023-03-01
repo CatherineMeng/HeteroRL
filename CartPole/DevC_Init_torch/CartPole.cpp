@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <random>
 
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <vector>
 #include <iostream>
 #include <string>
@@ -22,6 +22,7 @@ size_t num_repetitions = 1;
 // Vector type and data size for this example.
 size_t vector_size = 10000;
 typedef std::vector<float> FloatVector; 
+typedef std::vector<int> IntVector; 
 
 // Create an exception handler for asynchronous SYCL exceptions
 static auto exception_handler = [](sycl::exception_list e_list) {
@@ -128,25 +129,27 @@ const double kPi = 3.1415926535898;
 // Policy for CartPole env on FPGA. Does not depend on state, random
 //************************************
 void BasicPolicy(queue &q, int in_signal, FloatVector &state_vector,
-               int action) {
+               IntVector &action) {
   // Create the range object for the vectors managed by the buffer.
-  // range<1> num_items{a_vector.size()};
+  range<1> num_items{action.size()};
 
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
   // goes out of scope.
   buffer a_buf(state_vector);
+  buffer sum_buf(action.data(), num_items);
 
     // Submit a command group to the queue by a lambda function that contains the
     // data access permission and device computation (kernel).
-    q.submit([&](handler &h) {
+    q.submit([&](handler &h) mutable{
       // Create an accessor for each buffer with access permission: read, write or
       // read/write. The accessor is a mean to access the memory in the buffer.
       accessor a(a_buf, h, read_only);
+      accessor sum(sum_buf, h, write_only, no_init);
       // accessor b(b_buf, h, read_only);
       h.single_task([=]() { 
-      	if (in_signal%2==0)action=1;
-      	else action=0;  }
+      	if (in_signal%2==0)sum[0]=1;
+      	else sum[0]=0;  }
       	);
     });
   // Wait until compute tasks on GPU done
@@ -173,13 +176,16 @@ void BasicPolicy(queue &q, int in_signal, FloatVector &state_vector,
   state_vec.resize(4, 0);
   auto env = CartPole();
   double running_reward = 10.0;
+  IntVector a;
+  a.resize(1);
 	for (size_t episode = 0;; episode++) {
 		 env.reset();
 		 auto state = env.getState();
 
 		 int t = 0;
 		 for (; t < 100; t++) {
-		   int action = -1;
+		  //  int action = -1;
+      a[0]=-1;
 		   // if (t%2==0) action = 1; //naive policy
 		  // generate action given state
 		  try {
@@ -189,20 +195,21 @@ void BasicPolicy(queue &q, int in_signal, FloatVector &state_vector,
 		    std::cout << "Running on device: "
 		              << q.get_device().get_info<info::device::name>() << "\n";
 
+        // a[0]=action;
 		    // Vector addition in DPC++
-		    BasicPolicy(q, t, state_vec, action);
-		    std::cout << "action: " << action << "\n";
+		    BasicPolicy(q, t, state_vec, a);
+		    std::cout << "action: " << a[0] << "\n";
 		  } catch (exception const &e) {
 		    std::cout << "An exception is caught for Basic Policy.\n";
 		    std::terminate();
 		  }
-		   env.step(action);
+		   env.step(a[0]);
 		   state = env.getState();
 		   	for (int i=0;i<4;i++){state_vec[i] = state[i].item<float>();}
 		   auto reward = env.getReward();
 		   auto done = env.isDone();
 
-		   rewards.push_back(reward);
+		  //  rewards.push_back(reward);
 		   if (done)
 		     break;
 		 }

@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/u186670/HeteroRL_CartPole/RL_OneAPI/CartPole/DevC_Init_notorch/src/CartPole.cpp
+cmath
+-
+cstdlib
+-
+random
+-
+sycl/sycl.hpp
+-
+vector
+-
+iostream
+-
+string
+-
+sycl/ext/intel/fpga_extensions.hpp
+-
+
