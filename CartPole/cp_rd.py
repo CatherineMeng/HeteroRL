@@ -3,8 +3,8 @@ import gym
 env = gym.make("CartPole-v1")
 observation, info = env.reset(seed=42)
 
-success_threashold=500
-success_eps=5
+success_threashold=500 #number of iterations last by the agent
+success_eps=5 # number of episodes used to test the policy
 
 def run_episode(env, parameters):
     observation = env.reset()
