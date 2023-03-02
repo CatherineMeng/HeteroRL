@@ -1,0 +1,1 @@
+/glob/development-tools/versions/oneapi/2023.0.1/oneapi/compiler/2023.0.0/linux/bin/icpx   -fiopenmp -fopenmp-targets=spir64 -fsycl -O3 -DNDEBUG   CMakeFiles/openmp_reduction.dir/main.cpp.o  -o openmp_reduction 
