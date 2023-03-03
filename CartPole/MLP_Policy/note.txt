@@ -1,0 +1,11 @@
+mkdir build
+cd build
+
+//Generate makefile:
+cmake -DCMAKE_PREFIX_PATH=/home/u186670/libtorch ..
+
+//Compile:
+cmake --build . --config Release
+
+//Run:
+./dqn
