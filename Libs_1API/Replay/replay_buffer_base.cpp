@@ -10,8 +10,10 @@ ReplayBuffer::ReplayBuffer(int64_t capacity, const str_to_dataspec &data_spec,
     for (auto &it: data_spec) { //for every pair in unordered_map<std::string, MyDataSpec>
         auto name = it.first; // 
         auto shape = it.second.m_shape;
-        shape.insert(shape.begin(), capacity); //buffer capacity at beginning of shape vectpr
+        shape.insert(shape.begin(), capacity); 
         m_storage[name] = torch::zeros(shape, torch::TensorOptions().dtype(it.second.m_dtype));
+        // std::cout << m_storage[name] << std::endl;
+        //pre-allocated 0s for all samples in m_storage.  m_storage[name] is one torch tenssor that contains all smaples
     }
     reset();
 }
@@ -73,8 +75,9 @@ void ReplayBuffer::add_batch(str_to_tensor &data) {
                                             it.second.index({Slice(capacity() - m_ptr, None)})); //FIFO
         } else {
             // std::cout << "here1,m_ptr: "<<m_ptr<<", batch_size:"<<batch_size << std::endl; 
-            // m_storage[it.first].index_put_({Slice(m_ptr, m_ptr + batch_size)}, it.second);
-            m_storage.insert ( {it.first,it.second }); //assumption: str is the index, tensor is the experience tuple
+            m_storage[it.first].index_put_({Slice(m_ptr, m_ptr + batch_size)}, it.second); 
+            //assumption: it.first is the replay name. m_storage[it.first] is the meta tensor that stores all the samples. 
+            // m_storage.insert ( {it.first,it.second }); //(incorrect) assumption: str is the index, tensor is the experience tuple. 
         }
     }
     m_ptr = (m_ptr + batch_size) % capacity();

@@ -23,7 +23,7 @@ void print_map(std::unordered_map<K, V> const &m)
 }
 
 int main(){
-    std::vector<int64_t> vect{ 1024 };
+    std::vector<int64_t> vect{ 1024 }; //every experience is vect of 1024
     std::cout<<"step 0"<<"\n";
     // MyDataSpec dspec(vect,torch::kInt32);
     MyDataSpec dspec(vect);
@@ -34,7 +34,7 @@ int main(){
     // typedef std::unordered_map<std::string, MyDataSpec> str_to_dataspec;
     new_dspecs.insert ( {"replay1",dspec});  
     std::cout<<"step 3"<<"\n";  
-    UniformReplayBuffer RBuffer(1024, new_dspecs,8);
+    UniformReplayBuffer RBuffer(1024, new_dspecs,8); //1024 experiences in total for m_storage[name]
     std::cout<<"step 4"<<"\n";
     
     // for (int i=0;i<1024/8;i++){
@@ -45,7 +45,8 @@ int main(){
     // }
     str_to_tensor data1;
     std::cout<<"step 5"<<"\n";
-    data1.insert ( {"0",torch::rand({8,16})}); 
+    data1.insert ( {"replay1",torch::rand({8,1024})});  
+    //inserted data - dim0:batch size. dim1:expereince size, must match defined in constructing replay buffer
     std::cout<<"step 6"<<"\n";
     RBuffer.add_batch(data1);
     std::cout<<"step 7"<<"\n";
