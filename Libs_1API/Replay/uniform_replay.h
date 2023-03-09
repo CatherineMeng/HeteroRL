@@ -1,5 +1,5 @@
-#ifndef HIPC21_UNIFORM_REPLAY_BUFFER_H
-#define HIPC21_UNIFORM_REPLAY_BUFFER_H
+#ifndef UNIFORM_REPLAY_H
+#define UNIFORM_REPLAY_H
 
 #include "replay_buffer_base.h"
 
