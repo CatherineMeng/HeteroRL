@@ -1,6 +1,7 @@
 #include "sum_tree_nary.h"
 
 
+
 template<typename T>
 std::vector<T> convert_tensor_to_flat_vector(const torch::Tensor &tensor) {
     torch::Tensor t = torch::flatten(tensor.cpu());
@@ -97,7 +98,7 @@ float  SumTreeNary::reduce(int64_t start, int64_t end) const {
         return reduce(end);
     } else return reduce(end) - reduce(start);
 }
-
+// obtain prefix sum value from first element to element indexed at end. (index in the data storage)
 float  SumTreeNary::reduce(int64_t end) const {
     assert(end > 0 && end <= size());
     if (end == size()) {
@@ -122,7 +123,9 @@ float  SumTreeNary::reduce(int64_t end) const {
     return result;
 }
 
-// Sampling
+// Sampling. 
+// Inout: random generated value that is the target prefix-sum. 
+// Output: the index used to access the data storage - the sampled exp whose priority sums up to value according to the current priority distribution.
 torch::Tensor  SumTreeNary::get_prefix_sum_idx(torch::Tensor value) const {
     auto value_vec = convert_tensor_to_flat_vector<float>(value);
     auto index = torch::ones_like(value, torch::TensorOptions().dtype(torch::kInt64));
@@ -150,6 +153,83 @@ torch::Tensor  SumTreeNary::get_prefix_sum_idx(torch::Tensor value) const {
     return index;
 }
 
+
+
+//************************************
+// Sampling in SYCL on device
+//************************************
+void SumTreeNary::get_prefix_sum_idx_sycl(queue &q, torch::Tensor value, IntVector &index_parallel) {
+    auto value_vec = convert_tensor_to_flat_vector<float>(value);
+    // Create the range object for the vectors managed by the buffer.
+    range<1> num_items{value_vec.size()};
+
+    // Create buffers that hold the data shared between the host and the devices.
+    buffer a_buf(value_vec);
+    buffer out_buf(index_parallel.data(), num_items);
+    auto buf_m_bound = sycl::buffer{&m_bound, sycl::range{1}};
+    auto buf_m_n = sycl::buffer{&m_n, sycl::range{1}};
+    auto buf_log2_m_n = sycl::buffer{&log2_m_n, sycl::range{1}};
+    auto buf_m_padding = sycl::buffer{&m_padding, sycl::range{1}};
+    // moving complete tree between host and device only for sampling is time-consuming. optimize: manage the tree on device
+    std::vector<float> m_values_vec(m_size);
+    for (size_t i=0;i<m_size;i++){
+        m_values_vec[i]=m_values[i];
+    }
+    buffer buf_m_values(m_values_vec); 
+    // Submit a command group to the queue by a lambda function that contains the
+    // data access permission and device computation (kernel).
+
+    
+    q.submit([&](handler &h) {
+        // Create an accessor for each buffer with access permission: read, write or
+        // read/write. The accessor is a mean to access the memory in the buffer.
+        accessor vvec(a_buf, h, read_only);
+        // The sum_accessor is used to store (with write permission) the sum data.
+        accessor out_index(out_buf, h, write_only, no_init);
+
+        accessor acc_m_bound(buf_m_bound, h, read_only);
+        accessor acc_m_n(buf_m_n, h, read_only);
+        accessor acc_log2_m_n(buf_log2_m_n, h, read_only);
+        accessor acc_m_padding(buf_m_padding, h, read_only);
+        accessor acc_m_values(buf_m_values, h, read_only);
+
+        // Use parallel_for to run batched sampling in parallel on device.
+        // h.parallel_for(num_items, [=](auto i) {
+        
+        h.parallel_for(num_items, [=](auto i) {
+            int64_t idx = 0;
+            
+            float current_val = vvec[i];
+            while (idx<acc_m_bound[0]) { //!is_leaf(idx)
+                idx = (idx << acc_log2_m_n[0]) + 1; //get_left_child(idx);
+                float partial_sum = 0.;
+                for (int64_t j = 0; j < acc_m_n[0]; ++j) {
+                    // float after_sum = get_value(idx) + partial_sum;
+                    idx = idx + acc_m_padding[0]; //get_node_idx_after_padding(idx); for get_value(idx)
+                    float after_sum = acc_m_values[idx] + partial_sum; //get_value(idx)
+                    
+                    if (after_sum >= current_val) {
+                        break;
+                    }
+                    // get next sibling
+                    partial_sum = after_sum;
+                    idx += 1;
+                }
+                current_val -= partial_sum;
+            }
+            
+            out_index[i]= idx-acc_m_bound[0]; //convert_to_data_idx(idx);
+            // index.index_put_({i}, convert_to_data_idx(idx));
+    
+        });
+        
+    });
+
+    // Wait until compute tasks on GPU done
+    q.wait();
+    
+}
+
 bool  SumTreeNary::is_leaf(int64_t node_idx) const {
     return node_idx >= m_bound;
 }
@@ -172,7 +252,7 @@ void  SumTreeNary::initialize() {
 //    spdlog::info("SumTreeNary, n = {0}, size = {1}, m_bound = {2}", m_n, m_size, m_bound);
 }
 
-
+/*
 int main(){
     SumTreeNary PTree(1024, 16);
     // Test: insert (update) prorities for the first 512=128*4 leaf nodes
@@ -185,4 +265,33 @@ int main(){
     auto sampled = PTree.get_prefix_sum_idx(torch::rand(4));
     std::cout << sampled << std::endl; 
 
+}
+*/
+int main() {
+    default_selector d_selector;
+    SumTreeNary PTree(1024, 16); //size, fanout
+    // Test: insert (update) prorities for the first 512=128*4 leaf nodes (no sycl)
+    for (int i=0;i<128;i++){
+        PTree.set(torch::tensor({i*4,i*4+1,i*4+2,i*4+3}), //data storage indices
+        torch::tensor({0.1*i*4,0.1*(i*4+1),0.1*(i*4+2),0.1*(i*4+3)})); //synthetic priority values
+    }
+    // Test: sampling priorities (yes sycl parallelized, vector size of 8)
+    // try {
+    // queue q(d_selector, exception_handler);
+    queue q(d_selector);
+    // Print out the device information used for the kernel code.
+    std::cout << "Running on device: "
+                << q.get_device().get_info<info::device::name>() << "\n";
+    // Sampling in dpc++
+    IntVector sampled_ind(8); //this output vector size needs to be consistent with the value tensor size passed into prefix_sum function
+    PTree.get_prefix_sum_idx_sycl(q, torch::rand(8), sampled_ind);
+    // BasicPolicy(q, state_vec, param_vec, a);
+    std::cout << "sampled indices from: " << sampled_ind[0] <<" to "<< sampled_ind[7] << "\n";
+    // } catch (exception const &e) {
+    // std::cout << "An exception is caught for Basic Policy.\n";
+    // std::terminate();
+    // }
+    // auto sampled = PTree.get_prefix_sum_idx(torch::rand(8));
+
+    // std::cout << sampled << std::endl; 
 }

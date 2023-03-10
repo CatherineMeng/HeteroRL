@@ -3,19 +3,28 @@ if(UNIX)
     set(CMAKE_CXX_COMPILER icpx)
 endif()
 
+set(TARGET_NAME prioritized_replay)
+#set(SOURCE_FILE prioritized_replay.cpp)
+set(SOURCE_FILE vadd.cpp)
+
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
 
-project(uniform_replay CXX)
+project(${TARGET_NAME} CXX)
 
 find_package(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsycl")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl ${TORCH_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lOpenCL -lsycl")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-add_executable(uniform_replay uniform_replay.cpp replay_buffer_base.cpp)
-target_link_libraries(uniform_replay "${TORCH_LIBRARIES}")
-set_property(TARGET uniform_replay PROPERTY CXX_STANDARD 17)
+#add_executable(${TARGET_NAME} prioritized_replay.cpp replay_buffer_base.cpp sum_tree_nary.cpp)
+add_executable(${TARGET_NAME} ${SOURCE_FILE})
+# new content
+set(COMPILE_FLAGS "-fsycl -Wall ${WIN_FLAG}")
+set(LINK_FLAGS "-fsycl")
+set_target_properties(${TARGET_NAME} PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS}")
+set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS "${LINK_FLAGS}")
+add_custom_target(cpu-gpu DEPENDS ${TARGET_NAME})
+# end new content
+target_link_libraries(${TARGET_NAME} "${TORCH_LIBRARIES}")
+set_property(TARGET ${TARGET_NAME} PROPERTY CXX_STANDARD 17)

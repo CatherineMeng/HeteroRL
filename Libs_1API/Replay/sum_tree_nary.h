@@ -3,6 +3,10 @@
 #define SUM_TREE_NARY_H
 
 #include "sum_tree_base.h"
+#include <sycl/sycl.hpp>
+
+typedef std::vector<int> IntVector; 
+using namespace sycl;
 
 template<typename T>
 std::vector<T> convert_tensor_to_flat_vector(const torch::Tensor &tensor);
@@ -24,6 +28,8 @@ public:
     [[nodiscard]] float reduce(int64_t end) const;
 
     [[nodiscard]] torch::Tensor get_prefix_sum_idx(torch::Tensor value) const override;
+
+    void get_prefix_sum_idx_sycl(queue &q, torch::Tensor value, IntVector &index_parallel);
 
 protected:
     [[nodiscard]] int64_t size() const override;
