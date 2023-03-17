@@ -89,12 +89,25 @@ target_link_libraries(${TARGET_NAME} "${TORCH_LIBRARIES}")
 set_property(TARGET ${TARGET_NAME} PROPERTY CXX_STANDARD 17)
 ```
 
-## Minimal Example (Vec-Add) with DPC++ and Libtorch 
+## Example (sum_tree_nary) with DPC++ and Libtorch 
 ### build commands for version including libtorch:
+Request a compute node:
 ```
-cd ~/oneAPI-samples/DirectProgramming/C++SYCL/DenseLinearAlgebra/vector-add/build
+qsub -I -l nodes=1:gpu:ppn=2 -d .
+```
 
- [compile] icpx -fsycl -I/home/u186670/libtorch/include -I/home/u186670/libtorch/include/torch/csrc/api/include -D_GLIBCXX_USE_CXX11_ABI=0 -std=gnu++17 -L/home/u186670/libtorch/lib -Wl,-R/home/u186670/libtorch/lib -ltorch -ltorch_cpu -lc10 -o vector-add-buffers.cpp.o -c ../src/vector-add-buffers.cpp
+Set environment variable:
+```
+export LD_LIBRARY_PATH=/glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/lib/:$LD_LIBRARY_PATH
+```
 
- [link] icpx -fsycl -I/home/u186670/libtorch/include -I/home/u186670/libtorch/include/torch/csrc/api/include -D_GLIBCXX_USE_CXX11_ABI=0 -std=gnu++17 -L/home/u186670/libtorch/lib -Wl,-R/home/u186670/libtorch/lib -ltorch -ltorch_cpu -lc10 vector-add-buffers.cpp.o -o vector-add-buffers
- ```
+Compile:
+
+```
+icpx -fsycl sum_tree_nary.cpp -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include/torch/csrc/api/include -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include -L /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/lib -ltorch -ltorch_cpu -lc10 -w
+```
+
+Run:
+```
+./a.out
+```
