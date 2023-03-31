@@ -1,7 +1,7 @@
 ## CPU-GPU
 ### Compile:
 ```
-icpx -fsycl sum_tree_nary.cpp -o out
+icpx -fsycl -lgomp sum_tree_nary.cpp -o out
 ```
 
 ### Run-CPU:
