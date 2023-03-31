@@ -104,7 +104,7 @@ export LD_LIBRARY_PATH=/glob/development-tools/versions/oneapi/2023.0.1/oneapi/i
 Compile:
 
 ```
-icpx -fsycl sum_tree_nary.cpp -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include/torch/csrc/api/include -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include -L /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/lib -ltorch -ltorch_cpu -lc10 -w
+icpx -fsycl sum_tree_nary.cpp -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include/torch/csrc/api/include -I /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/include -L /glob/development-tools/versions/oneapi/2023.0.1/oneapi/intelpython/latest/envs/pytorch/lib/python3.9/site-packages/torch/lib -ltorch -ltorch_cpu -lc10 -lgomp -w
 ```
 
 Run:
