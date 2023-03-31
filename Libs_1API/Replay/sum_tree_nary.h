@@ -29,7 +29,10 @@ public:
 
     [[nodiscard]] torch::Tensor get_prefix_sum_idx(torch::Tensor value) const override;
 
+    void set_sycl(queue &q, const torch::Tensor &idx, const torch::Tensor &value);
+
     void get_prefix_sum_idx_sycl(queue &q, torch::Tensor value, IntVector &index_parallel);
+
 
 protected:
     [[nodiscard]] int64_t size() const override;
