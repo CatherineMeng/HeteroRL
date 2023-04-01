@@ -92,6 +92,9 @@ Request a compute node:
 ```
 qsub -I -l nodes=1:gpu:ppn=2 -d .
 ```
+```
+qsub -I -l nodes=1:xeon:ppn=2 -d .
+```
 
 Set environment variable:
 ```
