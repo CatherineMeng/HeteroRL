@@ -50,14 +50,14 @@ using fixed_upd = ac_fixed<22,16, false>;
 using fixed_insrt = ac_fixed<12,6, false>;
 
 using fixed_bool = ac_fixed<1,1, false>;
-
+/*
 typedef struct {
 	fixed_root TLev0;
 	fixed_l1 TLev1[Lev1_Width];
 	fixed_l2 TLev2[Lev2_Width];
 	fixed_l3 TLev3[Lev3_Width];
 } Tree;
-
+*/
 // data pack transfered along sibling iterators
 // update_offsets are calculated on the host based on the difference between sampled value and value to be updated
 // insertion is performed by get_priority followed by update from host (1. get_priority to get the old TD value, 2. update new TD value)
@@ -153,7 +153,7 @@ event Submit_Intermediate_SiblingItr(queue &q, size_t batch_size) {
 template<typename OutPipe>
 event Submit_Producer_SiblingItr(queue &q, sibit_io* in_ptr, fixed_root x, size_t chunk_size) {
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
-      // Declare the SRAM array for the current trere layer
+        // Declare the SRAM array for the current trere layer
         [[intel::singlepump,
         intel::fpga_memory("MLAB"),
         intel::numbanks(1)]]
@@ -197,6 +197,8 @@ event Submit_Producer_SiblingItr(queue &q, sibit_io* in_ptr, fixed_root x, size_
                 // ======== pass the idx down for obtaining TD at the leaf level (Consumer kernel) ========
             // }
         }
+        // Used for testbench, remove when test passed
+        PRINTF("Lev 1 TLev[0]: %f\n",TLev[0]);
     });
 }
 

@@ -118,25 +118,71 @@ int main(int argc, char* argv[]) {
       std::terminate();
     }
 
-    // generate the input data
-    // NOTE: by generating all of the data ahead of time, we are essentially
-    // assuming that the producer of data (producing data for the FPGA to
-    // consume) has infinite bandwidth. However, if the producer of data cannot
-    // produce data faster than our FPGA can consume it, the CPU producer will
-    // bottleneck the total throughput of the design.
-    std::generate_n(in, total_count, [] { return Type(rand() % 100); });
+    // ========== TestBench: Init ===========
+    fixed_root root_pr=0;
+    Init_Tree();
+    
+    // ========== TestBench: Insertion - get priority ===========
+    // generate the input data for insertion
+    // get_pr_value
+    sibit_io* in;
+    // outputs are in out_pr_insertion.
+    int* sampled_idx; 
+    fixed_l3* out_pr_sampled, out_pr_insertion; 
+    for (size_t ii=0; ii<64; ii++){
+      in[ii].sampling_flag=0;
+      in[ii].update_flag=0;
+      in[ii].get_priority_flag=1;
+      in[ii].init_flag=0;
+      in[ii].pr_idx=ii;
+    }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // run the optimized (for latency) version with multiple kernels that uses
-    // fast kernel relaunch by keeping at most 'inflight_kernels' in the SYCL
-    // queue at a time
-    std::cout << "Running the latency optimized multi-kernel design\n";
-    DoWorkMultiKernel(q, in, out, chunks, chunk_size, total_count,
-                      inflight_kernels, iterations);
-
-    // validate the results using the lambda
-
+    std::cout << "Running the get-priority kernel\n";
+    DoWorkMultiKernel<sibit_io,fixed_l3>(q, in, out_sampled_idx, out_sampled_value, out_insertion_getPr_value,
+     64, chunk_size, total_count, inflight_kernels, iterations);
+    // validate the results 
+    printf("out_pr_insertion[ii]: ");
+    for (size_t ii=0; ii<64; ii++){
+      printf("%f ", out_insertion_getPr_value[ii]); //should be all 0 if static init is successful
+    }    
     std::cout << "\n";
+
+    // ========== TestBench: Insertion - Update ===========
+    for (size_t ii=0; ii<64; ii++){
+      in[ii].sampling_flag=0;
+      in[ii].update_flag=1;
+      in[ii].get_priority_flag=0;
+      in[ii].init_flag=0;
+      in[ii].update_index_array={0,(ii/K)/K,ii/K,ii};
+      in[ii].update_offset_array={0.1,0.1,0.1,0.1};
+    }
+    std::cout << "Running the update kernel\n";
+    DoWorkMultiKernel<sibit_io,fixed_l3>(q, in, out_sampled_idx, out_sampled_value, out_insertion_getPr_value,
+     64, chunk_size, total_count, inflight_kernels, iterations);
+
+    // validate the results 
+    std::cout <<"Root value (updated): "<< root_pr << "\n";//should return 6.4
+    // On the FPGA side: PRINTF in the producer (lev1) should accumulates to 1.6 in the end.
+
+    // ========== TestBench: Sampling ===========
+    fixed_root tb_rand[chunks]={0.1, 1.0, 1.4, 6.3, 5.0, 3.1, 3.7, 2.0, 6.1,
+    0.2, 0.9, 1.7, 3.3, 2.8, 4.1, 3.2, 2.1, 6.0};
+    for (size_t ii=0; ii<chunks; ii++){
+      in[ii].sampling_flag=1;
+      in[ii].update_flag=0;
+      in[ii].get_priority_flag=0;
+      in[ii].init_flag=0;
+      in[ii].start=0;
+      in[ii].newx=tb_rand[ii];
+    }
+    std::cout << "Running the Sampling kernel\n";
+    DoWorkMultiKernel<sibit_io,fixed_l3>(q, in, out_sampled_idx, out_sampled_value, out_insertion_getPr_value,
+     chunks, chunk_size, total_count, inflight_kernels, iterations);
+
+    // validate the results 
+    for (size_t ii=0; ii<64; ii++){
+      printf("%f ", out_sampled_value[ii]);
+    } 
     ////////////////////////////////////////////////////////////////////////////
 
     // free the USM pointers
@@ -193,7 +239,9 @@ void DoWorkMultiKernel(queue& q, Tin* in, int* sampled_idx, Tout* out_pr_sampled
   std::queue<std::pair<event,event>> event_q;
   for (size_t i = 0; i < iterations; i++) {
     // reset the output data to catch any untouched data
-    std::fill_n(out, total_count, -1);
+    std::fill_n(sampled_idx, total_count, -1);
+    std::fill_n(out_pr_sampled, total_count, -1);
+    std::fill_n(out_pr_insertion, total_count, -1);
     // reset counters
     in_chunk = 0;
     out_chunk = 0;
@@ -212,6 +260,11 @@ void DoWorkMultiKernel(queue& q, Tin* in, int* sampled_idx, Tout* out_pr_sampled
     do {
       // if we still have kernels to launch, launch them in here
       if (in_chunk < chunks) {
+        //===perform update on root if necessary
+        if (in[in_chunk].update_flag==1){
+          root_pr+=in[in_chunk].update_offset_array[0];
+        }
+        
         // launch the producer/consumer pair for the next chunk of data
         size_t chunk_offset = in_chunk*chunk_size;
 
