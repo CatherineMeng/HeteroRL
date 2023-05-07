@@ -45,15 +45,15 @@ int main(int argc, char* argv[]) {
   #if defined(FPGA_EMULATOR)
     size_t chunks = 1 << 4;         // 16
     size_t chunk_size = 1;    // 1
-    size_t iterations = 2;
+    size_t iterations = 1;
   #elif defined(FPGA_SIMULATOR)
     size_t chunks = 1 << 4;         // 16
     size_t chunk_size = 1;    // 1
-    size_t iterations = 2;
+    size_t iterations = 1;
   #else
     size_t chunks = 1 << 4;         // 16
     size_t chunk_size = 1;   // 1
-    size_t iterations = 2;
+    size_t iterations = 1;
   #endif
 
   // This is the number of kernels we will have in the queue at a single time.
@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
   size_t total_count = chunks * chunk_size;
 
   std::cout << "# Chunks:             " << chunks << "\n";
-  std::cout << "Chunk count:          " << chunk_size << "\n";
+  std::cout << "Chunk size:          " << chunk_size << "\n";
   std::cout << "Total count:          " << total_count << "\n";
   std::cout << "Iterations:           " << iterations-1 << "\n";
   std::cout << "\n";
@@ -106,11 +106,11 @@ int main(int argc, char* argv[]) {
     int* out_sampled_idx; //sampling output
     fixed_l3* out_sampled_value; //sampling output
     fixed_l3* out_insertion_getPr_value; //insertion output
-    if ((in = malloc_host<sibit_io>(total_count, q)) == nullptr) {
+    if ((in = malloc_host<sibit_io>(total_count*4, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for 'in'\n";
       std::terminate();
     }
-    if ((out_sampled_idx = malloc_host<int>(total_count, q)) == nullptr
+    if ((out_sampled_idx = malloc_host<int>(total_count*4, q)) == nullptr
         || (out_sampled_value = malloc_host<fixed_l3>(total_count*4, q)) == nullptr
         || (out_insertion_getPr_value = malloc_host<fixed_l3>(total_count*4, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for out arrs\n";
@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Running the get-priority kernel\n";
     DoWorkMultiKernel<sibit_io,fixed_l3>(q, in, out_sampled_idx, out_sampled_value, out_insertion_getPr_value,
-    root_pr, 64, chunk_size, total_count, inflight_kernels, iterations);
+    root_pr, 64, chunk_size, 64, inflight_kernels, iterations);
     // validate the results 
     printf("out_pr_insertion[ii]: ");
     for (size_t ii=0; ii<64; ii++){
@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Running the update kernel\n";
     DoWorkMultiKernel<sibit_io,fixed_l3>(q, in, out_sampled_idx, out_sampled_value, out_insertion_getPr_value,
-    root_pr, 64, chunk_size, total_count, inflight_kernels, iterations);
+    root_pr, 64, chunk_size, 64, inflight_kernels, iterations);
 
     // validate the results 
     std::cout <<"Root value (updated): "<< root_pr << "\n";//should return 6.4
@@ -231,11 +231,9 @@ void DoWorkMultiKernel(sycl::queue& q, Tin* in, int* sampled_idx, Tout* out_pr_s
   // timing data
   std::vector<double> latency_ms(iterations);
   std::vector<double> process_time_ms(iterations);
-
-  // count the number of chunks for which kernels have been started
-  size_t in_chunk = 0;
-  // count the number of chunks for which kernels have finished 
-  size_t out_chunk = 0;
+  
+  size_t in_chunk = 0; // count the number of chunks for which kernels have been started
+  size_t out_chunk = 0; // count the number of chunks for which kernels have finished 
   // use a queue to track the kernels in flight
   std::queue<std::pair<event,event>> event_q;
   for (size_t i = 0; i < iterations; i++) {
@@ -262,12 +260,14 @@ void DoWorkMultiKernel(sycl::queue& q, Tin* in, int* sampled_idx, Tout* out_pr_s
       // if we still have kernels to launch, launch them in here
       if (in_chunk < chunks) {
         //===perform update on root if necessary
+        std::cout<<"in_chunk: "<<in_chunk<<"\n";
         if (in[in_chunk].update_flag==1){
           root_pr+=in[in_chunk].update_offset_array[0];
         }
         
         // launch the producer/consumer pair for the next chunk of data
         size_t chunk_offset = in_chunk*chunk_size;
+        std::cout<<"chunk_offset: "<<chunk_offset<<"\n";
 
         fixed_root x = 0;
         // these functions are defined in 'multi_kernel.hpp'
@@ -329,33 +329,6 @@ void DoWorkMultiKernel(sycl::queue& q, Tin* in, int* sampled_idx, Tout* out_pr_s
   // compute and print timing information
   // PrintPerformanceInfo<T>("Multi-kernel",total_count, latency_ms, process_time_ms);
 }
-
-// void Init_Tree(sycl::queue& q, fixed_root &root_pr){
-//   sibit_io in[2];
-//   in[0].sampling_flag=0;
-//   in[0].update_flag=0;
-//   in[0].get_priority_flag=0;
-//   in[0].init_flag=1;
-//   // outputs are not important, only used for SRAM tree init.
-//   int sampled_idx[2]; 
-//   fixed_l3 out_pr_sampled[2];
-//   fixed_l3 out_pr_insertion[2]; 
-//   std::cout << "hi\n";
-  
-//   event p_e = Submit_Producer_SiblingItr<ProducePipe>(q, in, root_pr, 1);
-//   auto events = Submit_Intermediate_SiblingItr<Itm1,fixed_l2,fixed_l3,ProducePipe,ConsumePipe,2,16>(q, 1);
-//   event c_e = Submit_Consumer_SiblingItr<fixed_l3, fixed_l2, ConsumePipe, Lev3_Width>(q, sampled_idx,
-//                                               out_pr_sampled,out_pr_insertion,1);
-//   p_e.wait();
-//   events.wait();
-//   c_e.wait();
-
-//   // sycl::free(in, q);
-//   // sycl::free(sampled_idx, q);
-//   // sycl::free(out_pr_sampled, q);
-//   // sycl::free(out_pr_insertion, q);
-//   printf("Host: Initalize Tree complete.\n"); 
-// }
 
 void Init_Tree(sycl::queue& q, fixed_root &root_pr){
 
@@ -437,7 +410,7 @@ void Init_Tree(sycl::queue& q, fixed_root &root_pr){
     sycl::free(out_pr_sampled,q);
     sycl::free(sampled_idx,q);
 
-    printf("Init tree done. \n");
+    printf("Init tree done. \n\n\n");
 }
 
 // a helper function to compute and print the performance info

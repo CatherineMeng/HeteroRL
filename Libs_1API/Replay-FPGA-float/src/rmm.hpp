@@ -83,21 +83,22 @@ class Itm1;
 // int treelayer=2. layersize is the total width of the tree layer.
 template<typename KernelClass, typename TLevDType, typename ParTLevDType, typename InPipe, typename OutPipe, int treelayer, int layersize>
 event Submit_Intermediate_SiblingItr(sycl::queue &q, size_t batch_size) {
-    printf( "hi2 from Intermediate_SiblingItr\n");
+    // printf( "submit Intermediate_SiblingItr\n");
     return q.single_task<KernelClass>([=]() [[intel::kernel_args_restrict]] {
       // Declare the SRAM array for the current trere layer
         // [[intel::singlepump,
         // intel::fpga_memory("MLAB"),
         // intel::numbanks(1)]]
         // static TLevDType TLev[layersize];
-        // PRINTF( "hi3\n");
         [[intel::singlepump,
         intel::fpga_memory("MLAB"),
         intel::numbanks(1)]]
         TLevDType TLev[layersize];
+        // PRINTF("itm single_task\n");
         for (size_t j = 0; j < batch_size; j++) {
+            // PRINTF("itm kernel, j: %d\n",j);
             sibit_io data_in = InPipe::read();
-            sibit_io data_out;
+            sibit_io data_out = data_in;
             if (data_in.init_flag==1){
                 for (size_t k=0; k<layersize; k++){
                     TLev[k]=0;
@@ -144,21 +145,15 @@ event Submit_Intermediate_SiblingItr(sycl::queue &q, size_t batch_size) {
 // This is always for level 1, TLevDType = fixed_l1, layersize is the tree fanouts.
 template<typename OutPipe>
 event Submit_Producer_SiblingItr(queue &q, sibit_io* in_ptr, fixed_root x, size_t chunk_size) {
-    printf( "hi2 from producer\n");
+    // printf( "submit the producer\n");
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
         // Declare the SRAM array for the current trere layer
         // [[intel::singlepump,
         // intel::fpga_memory("MLAB"),
         // intel::numbanks(1)]]
         // static fixed_l1 TLev[K];
-        PRINTF("hiiiiiiiii\n");
-        /*
-        host_ptr<sibit_io> in(in_ptr);
-        for (size_t i = 0; i < chunk_size; i++) {
-            auto data = in[i];
-            OutPipe::write(data);
-        }
-        */
+        // PRINTF("producer, chunk_size: %d\n",chunk_size);
+
         host_ptr<sibit_io> in(in_ptr);
         [[intel::singlepump,
         intel::fpga_memory("MLAB"),
@@ -166,6 +161,7 @@ event Submit_Producer_SiblingItr(queue &q, sibit_io* in_ptr, fixed_root x, size_
         fixed_l1 TLev[K];
         
         for (size_t j = 0; j < chunk_size; j++) {
+            // PRINTF("producer, itr j=%d\n",j);
             sibit_io data_in = in[j];
             sibit_io data_out;
             if (data_in.init_flag==1){
@@ -220,7 +216,7 @@ event Submit_Producer_SiblingItr(queue &q, sibit_io* in_ptr, fixed_root x, size_
 template<typename LastLevDType, typename ParTLevDType, typename InPipe, int layersize>
 event Submit_Consumer_SiblingItr(sycl::queue &q, int* out_ptr_sampled_idx, 
 LastLevDType* out_ptr_sampled_value, LastLevDType* out_ptr_getPr_value, size_t chunk_size) {
-    printf("hi2 from consumer;\n");
+    // printf("submit the consumer;\n");
     return q.single_task<C>([=]() [[intel::kernel_args_restrict]] {
         // [[intel::singlepump,
         // intel::fpga_memory("MLAB"),
@@ -230,7 +226,7 @@ LastLevDType* out_ptr_sampled_value, LastLevDType* out_ptr_getPr_value, size_t c
         intel::fpga_memory("MLAB"),
         intel::numbanks(1)]]
         LastLevDType TLev[layersize];
-
+        // PRINTF("consumer, chunk_size: %d\n",chunk_size);
         host_ptr<int> out_sampled_idx(out_ptr_sampled_idx);
         host_ptr<LastLevDType> out_sampled_value(out_ptr_sampled_value);
         host_ptr<LastLevDType> out_getPr_value(out_ptr_getPr_value);
