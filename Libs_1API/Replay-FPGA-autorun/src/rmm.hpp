@@ -72,7 +72,7 @@ class Itm1;
 class Itm2;
 class Itm3;
 
-// TODO: make it autorun
+// DONE: make it autorun
 // e.g. (root is lev 0, lev 1 is the host->fpga producer module) 
 // If level 2, TLevDType = fixed_l2 (priority data type stored on-chips), ParTLevDType = fixed_l1
 // int treelayer=2. layersize is the total width of the tree layer.
@@ -148,7 +148,7 @@ struct MyAutorun_itm {
 // }
 };
 
-// TODO: make it autorun
+// DONE: make it autorun
 // FPGA->CPU
 // If level D-1=3 is last level, LastLevDType = fixed_l3, ParTLevDType = fixed_l2
 // Outpipe1 is for sampled_idx (int)
