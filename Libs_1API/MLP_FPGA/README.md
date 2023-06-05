@@ -23,16 +23,11 @@ make fpga_emu
 
 ### FPGA Report
 
-Re-organized with src folder and cmake:
 ```
 make report
 ```
 View report: download build/rmmfpga_report.prj
-Open build/rmmfpga_report.prj/reports/report.html
-
-Output on FPGA Compile Time	node:
--- FPGA_DEVICE was not specified.                    
-Configuring the design to run on the default FPGA board intel_s10sx_pac:pac_s10_usm (Intel(R) PAC with Intel Stratix(R) 10 SX FPGA with USM support).         
+Open build/mvfpga_report.prj/reports/report.html        
 
 ### FPGA Hardware Simulation
 
