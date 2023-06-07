@@ -59,48 +59,20 @@ using ConsumePipe = ext::intel::pipe<class ConsumePipe1Class, act_fmt,16>; //sam
 
 // declaring a global instance of this class causes the constructor to be called
 // before main() starts, and the constructor launches the kernel.
-// fpga_tools::Autorun<MM> ar_kernel1{selector, MyAutorun_MM<MM, ProducePipe, ConsumePipe, 16, 256>{}};
-
-
-fpga_tools::Autorun<MM_FW1> ar_kernel1{forward1, MyAutorun_MMFW<MM_FW1, W1Fmt, StateConcate,L2ItmConcate, L2AG,
-         SinPipe, L1FWSigPipe, ReadW1Pipe, ReadB1Pipe, L12Pipe, A1Pipe, L1, L2>{}};
-
-fpga_tools::Autorun<MM_FW2> ar_kernel2{forward2, MyAutorun_MMFW_OL<MM_FW2, W2Fmt, L2ItmConcate, L3ItmConcate,
-         L12Pipe, L2FWSigPipe, ReadW2Pipe, ReadB2Pipe, L23Pipe, L2, L3>{}};
-
-fpga_tools::Autorun<OBJ> ar_kernel3{obj, MyAutorun_OBJ<OBJ, L3ItmConcate, L3AG, 
-         L23Pipe, RDonePipe, L32Pipe, D2Pipe, L3>{}};
-
-fpga_tools::Autorun<MM_BW> ar_kernel4{backward, MyAutorun_MMBW_OL <MM_BW, W2TranspFmt, L3AG, L2AG,
-         L32Pipe, L2BWSigPipe, ReadW2bwPipe, D1Pipe, L3, L2>{}};
-
-fpga_tools::Autorun<WA1> ar_kernel5{wa1, MyAutorun_MMWA <WA1, L1AG, L2AG, L2AG,
-         A0Pipe, D1Pipe, writeW1Pipe, writeB1Pipe, L1, L2>{}};
-fpga_tools::Autorun<WA2> ar_kernel6{wa2, MyAutorun_MMWA <WA2, L2AG, L3AG, L3AG,
-         A1Pipe, D2Pipe, writeW2Pipe, writeB2Pipe, L2, L3>{}};
-
-
-
-// '''
-event p_e1 = Submit_Producer<SinPipe,ReadW1Pipe,ReadW2Pipe,
-                            ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe>
-                            (q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, chunk_size, 1); //rest of chunks is 0   
-event p_e2 = Submit_Producer_BW<ReadW2bwPipe,L2BWSigPipe>(q, w2_buf, 1); //rest of chunks is 0 
-event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe,>(wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, chunk_size);
-// '''
+fpga_tools::Autorun<MM> ar_kernel1{selector, MyAutorun_MM<MM, ProducePipe, ConsumePipe, 16, 256>{}};
 
 int main(int argc, char* argv[]) {
   // default values
   #if defined(FPGA_EMULATOR)
-    size_t chunks = 8;        
+    size_t chunks = LL;         // 16
     size_t chunk_size = 1;    // 1
     size_t iterations = 1; //ToDo: This could be the batch size?
   #elif defined(FPGA_SIMULATOR)
-    size_t chunks = 8;         
+    size_t chunks = LL;         // 16
     size_t chunk_size = 1;    // 1
     size_t iterations = 1; //ToDo: This could be the batch size?
   #else
-    size_t chunks = 8;       
+    size_t chunks = LL;         // 16
     size_t chunk_size = 1;   // 1
     size_t iterations = 1; //ToDo: This could be the batch size?
   #endif
@@ -127,7 +99,6 @@ int main(int argc, char* argv[]) {
     // create the device queue
     sycl::queue q(selector, fpga_tools::exception_handler, prop_list);
 
-
     // make sure the device supports USM host allocations
     auto device = q.get_device();
     if (!device.get_info<info::device::usm_host_allocations>()) {
@@ -135,54 +106,25 @@ int main(int argc, char* argv[]) {
                 << " allocations\n";
       std::terminate();
     }
+
     std::cout << "Running on device: "
               << device.get_info<sycl::info::device::name>().c_str()
               << std::endl;
 
     // the USM input and output data
     // Type *in, *out;
-    StateConcate *state_in_buf;
-    W1Fmt *w1_buf;
-    W2Fmt *w2_buf;
-    act_fmt *bias1_buf;
-    act_fmt *bias2_buf;
-    RDone *rdone_buf;
+    act_fmt* in;
+    act_fmt* out; 
 
-    W2TranspFmt *w2t_buf;
+    if ((in = malloc_host<act_fmt>(LL, q)) == nullptr) {
+      std::cerr << "ERROR: could not allocate space for 'in'\n";
+      std::terminate();
+    }
+    if ((out = malloc_host<act_fmt>(NL, q)) == nullptr) {
+      std::cerr << "ERROR: could not allocate space for out\n";
+      std::terminate();
+    }
 
-    W2Fmt *wg1_buf;
-    W2TranspFmt *wg2_buf;
-    act_fmt *biasg1_buf;
-    act_fmt *biasg2_buf;
-    // assume batch size 8
-    if ((state_in_buf = malloc_host<StateConcate>(chunks*chunk_size, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for 'state_in_buf'\n";
-      std::terminate();
-    }
-    if ((w1_buf = malloc_host<W1Fmt>(L2, q)) == nullptr || (w2_buf = malloc_host<W2Fmt>(L3, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for w1/w2_buf\n";
-      std::terminate();
-    }
-    if ((bias1_buf = malloc_host<act_fmt>(L2, q)) == nullptr || (bias2_buf= malloc_host<act_fmt>(L3, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for b1/b2_buf\n";
-      std::terminate();
-    }
-    if ((rdone_buf= malloc_host<RDone>(chunks*chunk_size, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for 'RDone buf'\n";
-      std::terminate();
-    }
-    if ((w2t_buf= malloc_host<W2TranspFmt>(L2, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for 'w2t_buf'\n";
-      std::terminate();
-    }
-    if ((wg1_buf = malloc_host<W2Fmt>(L1, q)) == nullptr || (wg2_buf = malloc_host<W2TranspFmt>(L2, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for wg1/wg2_buf\n";
-      std::terminate();
-    }
-    if ((biasg1_buf = malloc_host<act_fmt>(L2, q)) == nullptr || (biasg2_buf= malloc_host<act_fmt>(L3, q)) == nullptr) {
-      std::cerr << "ERROR: could not allocate space for bg1/bg2_buf\n";
-      std::terminate();
-    }
     //Initialize input
     for (size_t i=0; i<LL; i++) in[i]=i;
     for (size_t i=0; i<LL; i++) out[i]=0;
@@ -352,4 +294,3 @@ void PrintPerformanceInfo(std::string print_prefix, size_t count,
   std::cout << print_prefix
             << " average throughput:        " << avg_tp_mb_s  << " MB/s\n";
 }
-

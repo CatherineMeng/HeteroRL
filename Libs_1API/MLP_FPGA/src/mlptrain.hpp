@@ -58,7 +58,7 @@ typedef struct {
 	float w[L2];
 } W2Fmt; //assume weights are float
 //for both inf and training
-typedef struct {
+typedef struct { //L3
 	float w[L3];
 } W2TranspFmt; //assume weights are float
 typedef struct {
@@ -105,10 +105,10 @@ using A1Pipe = ext::intel::pipe<class A1PipeClass, L2AG,8>; //its depth should b
 
 using L23Pipe = ext::intel::pipe<class L23PipeClass, L3ItmConcate,1>;
 
-using ReadW2bwPipe = ext::intel::pipe<class ReadW2bwPipeClass, W2TranspFmt,L2>;
-using L2BWSigPipe = ext::intel::pipe<class L2BWSigPipeClass, bool,1>; 
 using L32Pipe = ext::intel::pipe<class L32PipeClass, L3AG,1>;
 using D2Pipe = ext::intel::pipe<class D2PipeClass, L3AG,8>; //its depth should be >= processed sub-batch size (chunk size)
+using ReadW2bwPipe = ext::intel::pipe<class ReadW2bwPipeClass, W2TranspFmt,L2>;
+using L2BWSigPipe = ext::intel::pipe<class L2BWSigPipeClass, bool,1>; 
 
 using D1Pipe = ext::intel::pipe<class D1PipeClass, L2AG,8>; //its depth should be >= processed sub-batch size (chunk size)
 
@@ -118,10 +118,11 @@ using writeB1Pipe = ext::intel::pipe<class writeB1PipeClass, float,L2>;
 using writeW2Pipe = ext::intel::pipe<class writeW2PipeClass, W2Fmt,L3>;
 using writeB2Pipe = ext::intel::pipe<class writeB2PipeClass, float,L3>;
 
+
 // CPU->FPGA, producer for FW layers and LOSS (objctv) 
 // assume input data format is already handled at host (inputs/weights/<r,done> are arrays of structs, biases are arrays of floats)
 template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename OutPipeB1, typename OutPipeB2, typename OutSigPipeW1, typename OutSigPipeW2, typename A0bufPipe, typename rdPipe>
-event Submit_Producer(queue &q, StateConcate *state_in_buf, weight_fmt1 *w1_buf, weight_fmt2 *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
+event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
                       size_t size, bool stream_w) { //size is (sub-)batch size here, not state size
     // std::cout<< "submit the producer\n";
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
@@ -287,7 +288,7 @@ struct MyAutorun_MMFW_OL {
 };
 
 // objective function. (r + gamma * argmaxQ_snt - Q_s)
-// OLConcateFmt = L3ItmConcate, which is the format of data in InQsPipe
+// OLConcateFmt = L3ItmConcate (OLItmConcate), which is the format of data in InQsPipe
 // the format of data in InRDonePipe is RDone
 // the format of data in OutPipe is <OL>AG (L3AG when called)
 // the format of data in DOLPipe is <OL>AG (L3AG when called)
@@ -321,7 +322,7 @@ struct MyAutorun_OBJ {
 
 // CPU->FPGA, producer for BW layers 
 template<typename OutPipeW, typename OutSigPipeW>
-event Submit_Producer_BW(queue &q, weight_transpose_fmt2 *w2_buf, bool stream_w) { 
+event Submit_Producer_BW(queue &q, W2TranspFmt *w2_buf, bool stream_w) { 
     // std::cout<< "submit the producer\n";
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
         host_ptr<weight_transpose_fmt2> w2_in(w2_buf);
@@ -425,10 +426,10 @@ struct MyAutorun_MMWA {
 };
 
 template <typename InW1Pipe,typename InW2Pipe, typename InB1Pipe,typename InB2Pipe>
-event Submit_Consumer(queue& q, weight_fmt1 *wg1_buf, weight_fmt2 *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf, size_t size) {
+event Submit_Consumer(queue& q, W2Fmt *wg1_buf, W2TranspFmt *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf, size_t size) {
   return q.single_task<C>([=]() [[intel::kernel_args_restrict]] {
-    host_ptr<weight_fmt1> wg1(wg1_buf); //needs to be intialized to all 0
-    host_ptr<weight_fmt2> wg2(wg2_buf); //needs to be intialized to all 0
+    host_ptr<W2Fmt> wg1(wg1_buf); //needs to be intialized to all 0
+    host_ptr<W2TranspFmt> wg2(wg2_buf); //needs to be intialized to all 0
     host_ptr<act_fmt> bg1(biasg1_buf); //needs to be intialized to all 0
     host_ptr<act_fmt> bg2(biasg2_buf); //needs to be intialized to all 0
     for (size_t i = 0; i < size; i++) {
