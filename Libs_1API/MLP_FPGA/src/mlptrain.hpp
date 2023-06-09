@@ -311,7 +311,8 @@ struct MyAutorun_OBJ {
             }
             #pragma unroll
             for (size_t i=0; i<OL_nn; i++){
-                out.s[i]= rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i];
+                out.s[i] = (rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i]) * (Qs.s[i] > 0 ? 1 : 0);
+                // (Qs.s[i] > 0 ? 1 : 0) is the ct derivative
             }         
             OutPipe::write(out); 
             DOLPipe::write(out); 
