@@ -87,14 +87,14 @@ class WA2;
 class C; //consumer
 
 using SinPipe = ext::intel::pipe<class SinPipeClass, StateConcate,8>; //its depth should be >= processed sub-batch size (chunk size)
-using ReadW1Pipe = ext::intel::pipe<class ReadW1PipeClass, W1Fmt,L2>; //<name, datatype, pipe depth>
-using ReadB1Pipe = ext::intel::pipe<class ReadB1PipeClass, float,L2>;
+using ReadW1Pipe = ext::intel::pipe<class ReadW1PipeClass, W1Fmt,2*L2>; //<name, datatype, pipe depth>
+using ReadB1Pipe = ext::intel::pipe<class ReadB1PipeClass, float,2*L2>;
 //sigals weight sync, 1 means yes (stream in new weights to autorun kernels), 0 means no (keep weights static)
-using L1FWSigPipe = ext::intel::pipe<class L1SigPipeClass, bool,1>; 
-using ReadW2Pipe = ext::intel::pipe<class ReadW2PipeClass, W2Fmt,L3>;
-using ReadB2Pipe = ext::intel::pipe<class ReadB2PipeClass, float,L3>;
+using L1FWSigPipe = ext::intel::pipe<class L1SigPipeClass, bool,4+L2>; 
+using ReadW2Pipe = ext::intel::pipe<class ReadW2PipeClass, W2Fmt,2*L3>;
+using ReadB2Pipe = ext::intel::pipe<class ReadB2PipeClass, float,2*L3>;
 //sigals weight sync, 1 means yes (stream in new weights to autorun kernels), 0 means no (keep weights static)
-using L2FWSigPipe = ext::intel::pipe<class L2SigPipeClass, bool,1>; 
+using L2FWSigPipe = ext::intel::pipe<class L2SigPipeClass, bool,4+L3>; 
 using A0Pipe = ext::intel::pipe<class A0PipeClass, L1AG,8>; //its depth should be >= processed sub-batch size (chunk size)
 // from producer directly to obj, depth should be >= processed batch size (total count)
 using RDonePipe = ext::intel::pipe<class RDonePipeClass, RDone,64>; 
@@ -108,7 +108,7 @@ using L23Pipe = ext::intel::pipe<class L23PipeClass, L3ItmConcate,1>;
 using L32Pipe = ext::intel::pipe<class L32PipeClass, L3AG,1>;
 using D2Pipe = ext::intel::pipe<class D2PipeClass, L3AG,8>; //its depth should be >= processed sub-batch size (chunk size)
 using ReadW2bwPipe = ext::intel::pipe<class ReadW2bwPipeClass, W2TranspFmt,L2>;
-using L2BWSigPipe = ext::intel::pipe<class L2BWSigPipeClass, bool,1>; 
+using L2BWSigPipe = ext::intel::pipe<class L2BWSigPipeClass, bool,8+L2>; 
 
 using D1Pipe = ext::intel::pipe<class D1PipeClass, L2AG,8>; //its depth should be >= processed sub-batch size (chunk size)
 
@@ -130,6 +130,7 @@ template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename Out
 event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf, W2TranspFmt *w2t_buf,
                       size_t size, bool stream_w) { //size is (sub-)batch size here, not state size
     // std::cout<< "submit the producer\n";
+    // ext::oneapi::experimental::printf("***submit the producer\n");
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
         host_ptr<StateConcate> state_in(state_in_buf);
         host_ptr<W1Fmt> w1_in(w1_buf);
@@ -138,12 +139,15 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
         host_ptr<act_fmt> b2_in(bias2_buf);
         host_ptr<RDone> rd_in(rdone_buf);
         host_ptr<W2TranspFmt> w2t_in(w2t_buf);
+        
         for (size_t i = 0; i < size; i++) {
             OutPipeS::write(state_in[i]); 
+            ext::oneapi::experimental::printf("***size: %d\n",size);
             L1AG a0;
             #pragma unroll
             for (size_t j=0; j<L1; j++){
                 a0.s[j]=state_in[i].s[j];
+                
             }
             // A0bufPipe::write(state_in[i].s);
             A0bufPipe::write(a0);
@@ -152,21 +156,27 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
         // read weights only if signaled to do so  
         if (stream_w){
             for (size_t i = 0; i < L2; i++){
+                // ext::oneapi::experimental::printf("***writing W1\n");
                 OutPipeW1::write(w1_in[i]); 
                 OutPipeB1::write(b1_in[i]);
                 OutSigPipeW1::write(1);
             }
+            // ext::oneapi::experimental::printf("***writing W2\n");
             for (size_t i = 0; i < L3; i++){
                 OutPipeW2::write(w2_in[i]); 
                 OutPipeB2::write(b2_in[i]);
                 OutSigPipeW2::write(1);
             }
+            // ext::oneapi::experimental::printf("***writing W3\n");
             for (size_t i = 0; i < L2; i++){
                 OutPipeW2T::write(w2t_in[i]); 
                 OutSigPipeW2T::write(1);
             }
+            // ext::oneapi::experimental::printf("***wrote Ws\n");
         } 
         else{OutSigPipeW1::write(0);OutSigPipeW2::write(0);OutSigPipeW2T::write(0);} 
+    
+        PRINTF("***done with the producer\n");
     });
 }
 
@@ -205,7 +215,6 @@ struct MyAutorun_MMFW {
         intel::fpga_memory("MLAB"),
         intel::numbanks(1)]]
         NLConcateFmt Out[1];
-        // PRINTF("in fpga kernel ...\n");
 
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
@@ -403,6 +412,8 @@ struct MyAutorun_MMWA {
         // PRINTF("in fpga kernel ...\n");
         [[intel::fpga_register]]
         float OutB[NL_nn];
+
+        // ext::oneapi::experimental::printf("*****In WA\n");
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
             ActFmt act_arr = ActPipe::read();
@@ -412,14 +423,16 @@ struct MyAutorun_MMWA {
                 for (size_t j=0; j<NL_nn; j++){ 
                     OutW[i].s[j] = act_arr.s[i] * grd_arr.s[j];
                 }
+                OutWPipe::write(OutW[i]); 
+                // ext::oneapi::experimental::printf("***write W in WA\n");
             }                
             for (size_t j=0; j<NL_nn; j++){ 
                 OutB[j] = OutW[0].s[j];
                 OutBPipe::write(OutB[j]); 
             }
-            for (size_t i=0; i<LL_nn; i++){
-                OutWPipe::write(OutW[i]);     
-            }         
+            // for (size_t i=0; i<LL_nn; i++){
+            //     OutWPipe::write(OutW[i]);     
+            // }         
         }
     }
 };
@@ -433,26 +446,27 @@ event Submit_Consumer(queue& q, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_bu
     host_ptr<act_fmt> bg1(biasg1_buf); //needs to be intialized to all 0
     host_ptr<act_fmt> bg2(biasg2_buf); //needs to be intialized to all 0
     for (size_t i = 0; i < size; i++) {
+        L2AG res1;
+        L3AG res2;
         for (size_t j=0; j<L1; j++){
-            L2AG res;
             L2AG w1_wg = InW1Pipe::read();
             #pragma unroll
             for (size_t k=0; k<L2; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
                 // *(wg1 + j).s[k] += w1_wg.s[k]; 
                 if(k==0){}
-                res.s[k] += w1_wg.s[k]; 
+                res1.s[k] += w1_wg.s[k]; 
             }  
-            *(wg1 + j)  = res;
+            *(wg1 + j)  = res1;
+            // ext::oneapi::experimental::printf("***In Consumer2..\n");
         }
         for (size_t j=0; j<L2; j++){
-            L3AG res;
             L3AG w2_wg = InW2Pipe::read();
             #pragma unroll
             for (size_t k=0; k<L3; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
                 // *(wg2 + j).s[k] += w2_wg.s[k];
-                res.s[k] += w2_wg.s[k];
+                res2.s[k] += w2_wg.s[k];
             }    
-            *(wg2 + j)  = res;
+            *(wg2 + j)  = res2;
         }
         for (size_t j=0; j<L2; j++){
             float b1_wg = InB1Pipe::read();

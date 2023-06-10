@@ -341,7 +341,7 @@ void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf
   // use a queue to track the kernels in flight
   std::queue<std::pair<event,event>> event_q;
   for (size_t i = 0; i < iterations; i++) {
-    std::cout <<"in interation i = "<<i<<"\n";
+    // std::cout <<"in interation i = "<<i<<"\n";
     // reset the output data to catch any untouched data
     // std::fill_n(out, NL, -1);
     // reset counters
@@ -351,7 +351,6 @@ void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf
     std::queue<std::pair<event,event>> clear_q;
 
     std::swap(event_q, clear_q);
-    std::cout <<"here0 "<<"\n";
 
     do {
       // if we still have kernels to launch, launch them in here
@@ -364,10 +363,9 @@ void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf
         // event c_e = Submit_Consumer<ConsumePipe>(q, out + chunk_offset, chunk_size);
         event p_e1 = Submit_Producer<SinPipe,ReadW1Pipe,ReadW2Pipe,
                                     ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe,ReadW2bwPipe,L2BWSigPipe>
-                                    (q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, w2t_buf, chunk_size, 1); //rest of chunks is 0   
+                                    (q, state_in_buf + chunk_offset, w1_buf + chunk_offset, w2_buf + chunk_offset, bias1_buf + chunk_offset, bias2_buf + chunk_offset, rdone_buf + chunk_offset, w2t_buf + chunk_offset, chunk_size, 1); //rest of chunks is 0   
         // event p_e2 = Submit_Producer_BW<ReadW2bwPipe,L2BWSigPipe>(q, w2t_buf, 1); //rest of chunks is 0 
         event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe>(q, wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, chunk_size);
-        std::cout <<"here1 "<<"\n";
         // push the kernel event into the queue
         event_q.push(std::make_pair(p_e1, p_e3));
         // event_q.push(std::make_tuple(p_e1,p_e2,p_e3));
@@ -383,14 +381,18 @@ void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf
       //
       // NOTE: 'inflight_kernels' is now the number of inflight
       // producer/consumer kernel pairs
+      std::cout <<"here "<<"\n";
       if ((event_q.size() >= inflight_kernels) || (in_chunk >= chunks)) {
         // grab the oldest kernel event we are waiting on
         auto event_pair = event_q.front();
         event_q.pop();
+        std::cout <<"event_q.pop(); "<<"\n";
 
         // wait on the producer/consumer kernel pair to finish
         event_pair.first.wait();    // producer
+        std::cout <<"producer completed "<<"\n";
         event_pair.second.wait();   // consumer
+        std::cout <<"consumer completed "<<"\n";
         // std::get<0>(event_pair).wait();
         // std::get<1>(event_pair).wait();
         // std::get<2>(event_pair).wait();
