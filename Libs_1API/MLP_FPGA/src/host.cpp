@@ -40,25 +40,23 @@ using namespace std::chrono;
 // queue properties to enable profiling
 property_list prop_list { property::queue::enable_profiling() };
 
-template <typename T>
-void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
+void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
+                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
                         size_t chunks, size_t chunk_size, size_t total_count,
                         size_t inflight_kernels, size_t iterations);
-
-
 // The following functions are for validating results on the host
-void forwardPass(int L1, int L2, int L3, const float* input, const float* input_nt, const float* hiddenBiases,
+void forwardPass(const float* input, const float* input_nt, const float* hiddenBiases,
                  const std::vector<std::vector<float>>& hiddenWeights, const float* outputBiases,
                  const std::vector<std::vector<float>>& outputWeights,
-                 float* hiddenOutput, float* output, float* output_nt);
-void backwardPass(int L1, int L2, int L3, const float* input, const float* hiddenOutput,
+                 float* hiddenOutput, float* hiddenOutput_nt, float* output, float* output_nt);
+void backwardPass(const float* input, const float* hiddenOutput,
                   const float* output, const float* targetOutput, const RDone rd,
                   const std::vector<std::vector<float>>& hiddenWeights,
                   const std::vector<std::vector<float>>& outputWeights,
                   std::vector<std::vector<float>>& hiddenWeightGradients,
                   std::vector<std::vector<float>>& outputWeightGradients,
                   float* hiddenBiasGradients, float* outputBiasGradients);
-void updateWeightsAndBiases(float learningRate, int L1, int L2, int L3,
+void updateWeightsAndBiases(float learningRate, 
                             std::vector<std::vector<float>>& hiddenWeights,
                             std::vector<std::vector<float>>& outputWeights,
                             float* hiddenBiases, float* outputBiases,
@@ -73,21 +71,21 @@ using ConsumePipe = ext::intel::pipe<class ConsumePipe1Class, act_fmt,16>; //sam
 
 // declaring a global instance of this class causes the constructor to be called
 // before main() starts, and the constructor launches the kernel.
-fpga_tools::Autorun<MM_FW1> ar_kernel1{forward1, MyAutorun_MMFW<MM_FW1, W1Fmt, StateConcate,L2ItmConcate, L2AG,
+fpga_tools::Autorun<MM_FW1> ar_kernel1{selector, MyAutorun_MMFW<MM_FW1, W1Fmt, StateConcate,L2ItmConcate, L2AG,
          SinPipe, L1FWSigPipe, ReadW1Pipe, ReadB1Pipe, L12Pipe, A1Pipe, L1, L2>{}};
 
-fpga_tools::Autorun<MM_FW2> ar_kernel2{forward2, MyAutorun_MMFW_OL<MM_FW2, W2Fmt, L2ItmConcate, L3ItmConcate,
+fpga_tools::Autorun<MM_FW2> ar_kernel2{selector, MyAutorun_MMFW_OL<MM_FW2, W2Fmt, L2ItmConcate, L3ItmConcate,
          L12Pipe, L2FWSigPipe, ReadW2Pipe, ReadB2Pipe, L23Pipe, L2, L3>{}};
 
-fpga_tools::Autorun<OBJ> ar_kernel3{obj, MyAutorun_OBJ<OBJ, L3ItmConcate, L3AG, 
+fpga_tools::Autorun<OBJ> ar_kernel3{selector, MyAutorun_OBJ<OBJ, L3ItmConcate, L3AG, 
          L23Pipe, RDonePipe, L32Pipe, D2Pipe, L3>{}};
 
-fpga_tools::Autorun<MM_BW> ar_kernel4{backward, MyAutorun_MMBW_OL <MM_BW, W2TranspFmt, L3AG, L2AG,
+fpga_tools::Autorun<MM_BW> ar_kernel4{selector, MyAutorun_MMBW_OL <MM_BW, W2TranspFmt, L3AG, L2AG,
          L32Pipe, L2BWSigPipe, ReadW2bwPipe, D1Pipe, L3, L2>{}};
 
-fpga_tools::Autorun<WA1> ar_kernel5{wa1, MyAutorun_MMWA <WA1, L1AG, L2AG, L2AG,
+fpga_tools::Autorun<WA1> ar_kernel5{selector, MyAutorun_MMWA <WA1, L1AG, L2AG, L2AG,
          A0Pipe, D1Pipe, writeW1Pipe, writeB1Pipe, L1, L2>{}};
-fpga_tools::Autorun<WA2> ar_kernel6{wa2, MyAutorun_MMWA <WA2, L2AG, L3AG, L3AG,
+fpga_tools::Autorun<WA2> ar_kernel6{selector, MyAutorun_MMWA <WA2, L2AG, L3AG, L3AG,
          A1Pipe, D2Pipe, writeW2Pipe, writeB2Pipe, L2, L3>{}};
 
 
@@ -116,7 +114,7 @@ int main(int argc, char* argv[]) {
   // fast kernel relaunch (see the README). If this number is set to high,
   // then the first kernel launched finishes before we are done launching all
   // the kernels and therefore throughput is decreased.
-  size_t inflight_kernels = LL;
+  size_t inflight_kernels = 1;
   // compute the total number of elements
   size_t total_count = chunks * chunk_size;
 
@@ -156,8 +154,8 @@ int main(int argc, char* argv[]) {
 
     W2TranspFmt *w2t_buf;
 
-    W2Fmt *wg1_buf;
-    W2TranspFmt *wg2_buf;
+    L2AG *wg1_buf;
+    L3AG *wg2_buf;
     act_fmt *biasg1_buf;
     act_fmt *biasg2_buf;
     // assume batch size 8
@@ -181,7 +179,7 @@ int main(int argc, char* argv[]) {
       std::cerr << "ERROR: could not allocate space for 'w2t_buf'\n";
       std::terminate();
     }
-    if ((wg1_buf = malloc_host<W2Fmt>(L1, q)) == nullptr || (wg2_buf = malloc_host<W2TranspFmt>(L2, q)) == nullptr) {
+    if ((wg1_buf = malloc_host<L2AG>(L1, q)) == nullptr || (wg2_buf = malloc_host<L3AG>(L2, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for wg1/wg2_buf\n";
       std::terminate();
     }
@@ -205,6 +203,7 @@ int main(int argc, char* argv[]) {
     float input_nt[L1] = {1.2f, 2.0f, 1.0f, 3.2f, 5.0f, 6.3f, 7.0f, 5.0f,
                        9.0f, 7.0f, 8.7f, 12.0f, 1.9f, 4.0f, 5.7f, 12.0f};
     float hiddenOutput[L2] = {0.0f};
+    float hiddenOutput_nt[L2] = {0.0f};
     float output[L3] = {0.0f};
     float output_nt[L3] = {0.0f};
 
@@ -232,18 +231,21 @@ int main(int argc, char* argv[]) {
 
 
     // Perform the forward pass
-    forwardPass(L1, L2, L3, input, input_nt, hiddenBiases, hiddenWeights, outputBiases, outputWeights, hiddenOutput, output, output_nt);
+    forwardPass(input, input_nt, hiddenBiases, hiddenWeights, outputBiases, outputWeights, hiddenOutput,hiddenOutput_nt, output, output_nt);
 
     // Perform the backward pass
-    backwardPass(L1, L2, L3, input, hiddenOutput, output, output_nt, rd, hiddenWeights, outputWeights,
+    backwardPass(input, hiddenOutput, output, output_nt, rd, hiddenWeights, outputWeights,
                  hiddenWeightGradients, outputWeightGradients, hiddenBiasGradients, outputBiasGradients);
 
     // Update the weights and biases
-    updateWeightsAndBiases(learningRate, L1, L2, L3, hiddenWeights, outputWeights, hiddenBiases, outputBiases,
+    updateWeightsAndBiases(learningRate, hiddenWeights, outputWeights, hiddenBiases, outputBiases,
                            hiddenWeightGradients, outputWeightGradients, hiddenBiasGradients, outputBiasGradients);
 
     // ========== validate the results on FPGA ========== 
     //Initialize inputs for FPGA kernel
+
+    rdone_buf[0].r=2;
+    rdone_buf[0].done=0;
     for (size_t i=0; i<L1; i++) {
       state_in_buf[0].s[i]=input[i]; //replace 0 with sub-batch index later on
       state_in_buf[0].snt[i]=input_nt[i];
@@ -262,31 +264,42 @@ int main(int argc, char* argv[]) {
     for (size_t i=0; i<L1; i++) {
       for (size_t j=0; j<L2; j++){
         w1_buf[j].w[i]=hiddenWeights[i][j];
-        wg1_buf[i].w[j]=0;
+        wg1_buf[i].s[j]=0;
       }
     }
     for (size_t i=0; i<L2; i++) {
       for (size_t j=0; j<L3; j++){
         w2_buf[j].w[i]=outputWeights[i][j];
         w2t_buf[i].w[j]=outputWeights[i][j];
-        wg2_buf[i].w[j]=0;
+        wg2_buf[i].s[j]=0;
       }
     }
 
     std::cout << "Running the MLP train FPGA kernel\n";
     
     // std::cout << "hi1\n";std::cout << "hi2\n";std::cout << "hi3\n";
-    DoWorkMultiKernel<act_fmt>(q, in, out, chunks, chunk_size, total_count, inflight_kernels, iterations);
+    DoWorkMultiKernel(q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, w2t_buf, 
+    wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, 
+    chunks, chunk_size, total_count, inflight_kernels, iterations);
+
+
     // for (size_t ii=0; ii<8; ii++){
     //     if (out[ii]!=out_host[ii]){passed=false;}
     // }
     std::cout << "Completed the MLP gradient update kernel\n";
 
     // free the USM pointers
-    sycl::free(in, q);
-    sycl::free(out, q);
-    sycl::free(out_host, q);
-
+    sycl::free(state_in_buf, q);
+    sycl::free(w1_buf, q);
+    sycl::free(w2_buf, q);
+    sycl::free(bias1_buf, q);
+    sycl::free(bias2_buf, q);
+    sycl::free(rdone_buf, q);
+    sycl::free(w2t_buf, q);
+    sycl::free(wg1_buf, q);
+    sycl::free(wg2_buf, q);
+    sycl::free(biasg1_buf, q);
+    sycl::free(biasg2_buf, q);
   } catch (sycl::exception const& e) {
     // Catches exceptions in the host code
     std::cerr << "Caught a SYCL host exception:\n" << e.what() << "\n";
@@ -314,8 +327,9 @@ int main(int argc, char* argv[]) {
 
 // Tin:act_fmt, Tout: act_fmt
 // template <typename Tin, typename Tout>
-template <typename T>
-void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
+// template <typename T>
+void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
+                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
                         size_t chunks, size_t chunk_size, size_t total_count,
                         size_t inflight_kernels, size_t iterations) {
   // timing data
@@ -329,7 +343,7 @@ void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
   for (size_t i = 0; i < iterations; i++) {
     std::cout <<"in interation i = "<<i<<"\n";
     // reset the output data to catch any untouched data
-    std::fill_n(out, NL, -1);
+    // std::fill_n(out, NL, -1);
     // reset counters
     in_chunk = 0;
     out_chunk = 0;
@@ -337,7 +351,7 @@ void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
     std::queue<std::pair<event,event>> clear_q;
 
     std::swap(event_q, clear_q);
-
+    std::cout <<"here0 "<<"\n";
 
     do {
       // if we still have kernels to launch, launch them in here
@@ -349,13 +363,14 @@ void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
         // event p_e = Submit_Producer<ProducePipe>(q, in + chunk_offset, chunk_size);   
         // event c_e = Submit_Consumer<ConsumePipe>(q, out + chunk_offset, chunk_size);
         event p_e1 = Submit_Producer<SinPipe,ReadW1Pipe,ReadW2Pipe,
-                                    ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe>
-                                    (q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, chunk_size, 1); //rest of chunks is 0   
-        event p_e2 = Submit_Producer_BW<ReadW2bwPipe,L2BWSigPipe>(q, w2_buf, 1); //rest of chunks is 0 
-        event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe>(wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, chunk_size);
+                                    ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe,ReadW2bwPipe,L2BWSigPipe>
+                                    (q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, w2t_buf, chunk_size, 1); //rest of chunks is 0   
+        // event p_e2 = Submit_Producer_BW<ReadW2bwPipe,L2BWSigPipe>(q, w2t_buf, 1); //rest of chunks is 0 
+        event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe>(q, wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, chunk_size);
+        std::cout <<"here1 "<<"\n";
         // push the kernel event into the queue
-        // event_q.push(std::make_pair(p_e, c_e));
-        event_q.push(std::make_tuple(p_e1,p_e2,p_e3));
+        event_q.push(std::make_pair(p_e1, p_e3));
+        // event_q.push(std::make_tuple(p_e1,p_e2,p_e3));
 
         // if this is the first chunk, track the time
         // if (in_chunk == 0) first_data_in = high_resolution_clock::now();
@@ -374,11 +389,11 @@ void DoWorkMultiKernel(sycl::queue& q, T* in, T* out,
         event_q.pop();
 
         // wait on the producer/consumer kernel pair to finish
-        // event_pair.first.wait();    // producer
-        // event_pair.second.wait();   // consumer
-        std::get<0>(event_pair).wait();
-        std::get<1>(event_pair).wait();
-        std::get<2>(event_pair).wait();
+        event_pair.first.wait();    // producer
+        event_pair.second.wait();   // consumer
+        // std::get<0>(event_pair).wait();
+        // std::get<1>(event_pair).wait();
+        // std::get<2>(event_pair).wait();
 
         // track the time if this is the first producer/consumer pair
         // if (out_chunk == 0) first_data_out = high_resolution_clock::now();
@@ -407,10 +422,10 @@ float relu(float x) {
 }
 
 // Forward pass. nt means next state
-void forwardPass(int L1, int L2, int L3, const float* input, const float* input_nt, const float* hiddenBiases,
+void forwardPass(const float* input, const float* input_nt, const float* hiddenBiases,
                  const std::vector<std::vector<float>>& hiddenWeights, const float* outputBiases,
                  const std::vector<std::vector<float>>& outputWeights,
-                 float* hiddenOutput, float* output, float* output_nt) {
+                 float* hiddenOutput, float* hiddenOutput_nt, float* output, float* output_nt) {
     // Calculate hidden layer output
     for (int i = 0; i < L2; i++) {
         float sum = hiddenBiases[i];
@@ -438,7 +453,7 @@ void forwardPass(int L1, int L2, int L3, const float* input, const float* input_
 
 // Backward pass
 // output: Q values from FW, targetOutput: Q_nt values from FW.
-void backwardPass(int L1, int L2, int L3, const float* input, const float* hiddenOutput,
+void backwardPass( const float* input, const float* hiddenOutput,
                   const float* output, const float* targetOutput, const RDone rd,
                   const std::vector<std::vector<float>>& hiddenWeights,
                   const std::vector<std::vector<float>>& outputWeights,
@@ -479,7 +494,7 @@ void backwardPass(int L1, int L2, int L3, const float* input, const float* hidde
 }
 
 // Update weights and biases
-void updateWeightsAndBiases(float learningRate, int L1, int L2, int L3,
+void updateWeightsAndBiases(float learningRate, 
                             std::vector<std::vector<float>>& hiddenWeights,
                             std::vector<std::vector<float>>& outputWeights,
                             float* hiddenBiases, float* outputBiases,

@@ -113,30 +113,42 @@ using L2BWSigPipe = ext::intel::pipe<class L2BWSigPipeClass, bool,1>;
 using D1Pipe = ext::intel::pipe<class D1PipeClass, L2AG,8>; //its depth should be >= processed sub-batch size (chunk size)
 
 // using ConsumePipe = ext::intel::pipe<class ConsumePipe1Class, act_fmt,16>; 
-using writeW1Pipe = ext::intel::pipe<class writeW1PipeClass, W1Fmt,L2>; //<name, datatype, pipe depth>
+// using writeW1Pipe = ext::intel::pipe<class writeW1PipeClass, W1Fmt,L2>; //<name, datatype, pipe depth>
+using writeW1Pipe = ext::intel::pipe<class writeW1PipeClass, L2AG,L1>; //<name, datatype, pipe depth>
 using writeB1Pipe = ext::intel::pipe<class writeB1PipeClass, float,L2>;
-using writeW2Pipe = ext::intel::pipe<class writeW2PipeClass, W2Fmt,L3>;
+// using writeW2Pipe = ext::intel::pipe<class writeW2PipeClass, W2Fmt,L3>;
+using writeW2Pipe = ext::intel::pipe<class writeW2PipeClass, L3AG,L2>;
 using writeB2Pipe = ext::intel::pipe<class writeB2PipeClass, float,L3>;
 
 
 // CPU->FPGA, producer for FW layers and LOSS (objctv) 
 // assume input data format is already handled at host (inputs/weights/<r,done> are arrays of structs, biases are arrays of floats)
-template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename OutPipeB1, typename OutPipeB2, typename OutSigPipeW1, typename OutSigPipeW2, typename A0bufPipe, typename rdPipe>
-event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
+
+// TODO: combine Submit_Producer and Submit_Producer_BW
+
+template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename OutPipeB1, typename OutPipeB2, typename OutSigPipeW1, typename OutSigPipeW2, typename A0bufPipe, typename rdPipe, typename OutPipeW2T, typename OutSigPipeW2T>
+event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf, W2TranspFmt *w2t_buf,
                       size_t size, bool stream_w) { //size is (sub-)batch size here, not state size
     // std::cout<< "submit the producer\n";
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
         host_ptr<StateConcate> state_in(state_in_buf);
-        host_ptr<weight_fmt1> w1_in(w1_buf);
-        host_ptr<weight_fmt2> w2_in(w2_buf);
+        host_ptr<W1Fmt> w1_in(w1_buf);
+        host_ptr<W2Fmt> w2_in(w2_buf);
         host_ptr<act_fmt> b1_in(bias1_buf);
         host_ptr<act_fmt> b2_in(bias2_buf);
         host_ptr<RDone> rd_in(rdone_buf);
+        host_ptr<W2TranspFmt> w2t_in(w2t_buf);
         for (size_t i = 0; i < size; i++) {
             OutPipeS::write(state_in[i]); 
-            A0bufPipe::write(state_in[i].s);
+            L1AG a0;
+            #pragma unroll
+            for (size_t j=0; j<L1; j++){
+                a0.s[j]=state_in[i].s[j];
+            }
+            // A0bufPipe::write(state_in[i].s);
+            A0bufPipe::write(a0);
             rdPipe::write(rd_in[i]);
-        }     
+        }  
         // read weights only if signaled to do so  
         if (stream_w){
             for (size_t i = 0; i < L2; i++){
@@ -149,11 +161,14 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
                 OutPipeB2::write(b2_in[i]);
                 OutSigPipeW2::write(1);
             }
+            for (size_t i = 0; i < L2; i++){
+                OutPipeW2T::write(w2t_in[i]); 
+                OutSigPipeW2T::write(1);
+            }
         } 
-        else{OutSigPipeW1::write(0);OutSigPipeW2::write(0);} 
+        else{OutSigPipeW1::write(0);OutSigPipeW2::write(0);OutSigPipeW2T::write(0);} 
     });
 }
-
 
 // LLConcateFmt: last-level input concatenation of intermediate results from current+next state
 // NLConcateFmt: next-level output concatenation of intermediate results from current+next state
@@ -195,18 +210,18 @@ struct MyAutorun_MMFW {
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
             In[0] = InPipe::read();
-            bool rwf = InSigPipe.read();
+            bool rwf = InSigPipe::read();
             if (rwf){
                 for (size_t i=0; i<NL_nn; i++){
-                    W[i]=InWPipe.read();
-                    B[i]=InBPipe.read();
+                    W[i]=InWPipe::read();
+                    B[i]=InBPipe::read();
                 }
             }
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){
-                    Out[0].s[j] += In[i].s * W[j].w[i];
-                    Out[0].snt[j] += In[i].snt * W[j].w[i];
+                    Out[0].s[j] += In[0].s[i] * W[j].w[i];
+                    Out[0].snt[j] += In[0].snt[i] * W[j].w[i];
                 }
             }
             #pragma unroll
@@ -259,18 +274,18 @@ struct MyAutorun_MMFW_OL {
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
             In[0] = InPipe::read();
-            bool rwf = InSigPipe.read();
+            bool rwf = InSigPipe::read();
             if (rwf){
                 for (size_t i=0; i<NL_nn; i++){
-                    W[i]=InWPipe.read();
-                    B[i]=InBPipe.read();
+                    W[i]=InWPipe::read();
+                    B[i]=InBPipe::read();
                 }
             }
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){
-                    Out[0].s[j] += In[i].s * W[j].w[i];
-                    Out[0].snt[j] += In[i].snt * W[j].w[i];
+                    Out[0].s[j] += In[0].s[i] * W[j].w[i];
+                    Out[0].snt[j] += In[0].snt[i] * W[j].w[i];
                 }
             }
             #pragma unroll
@@ -311,32 +326,15 @@ struct MyAutorun_OBJ {
             }
             #pragma unroll
             for (size_t i=0; i<OL_nn; i++){
-                out.s[i] = (rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i]) * (Qs.s[i] > 0 ? 1 : 0);
+                out[0].s[i] = (rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i]) * (Qs.s[i] > 0 ? 1 : 0);
                 // (Qs.s[i] > 0 ? 1 : 0) is the ct derivative
             }         
-            OutPipe::write(out); 
-            DOLPipe::write(out); 
+            OutPipe::write(out[0]); 
+            DOLPipe::write(out[0]); 
         }
     }
 };
 
-
-// CPU->FPGA, producer for BW layers 
-template<typename OutPipeW, typename OutSigPipeW>
-event Submit_Producer_BW(queue &q, W2TranspFmt *w2_buf, bool stream_w) { 
-    // std::cout<< "submit the producer\n";
-    return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
-        host_ptr<weight_transpose_fmt2> w2_in(w2_buf);
-        // read weights only if signaled to do so  
-        if (stream_w){
-            for (size_t i = 0; i < L2; i++){
-                OutPipeW::write(w2_in[i]); 
-                OutSigPipeW::write(1);
-            }
-        } 
-        else{OutSigPipeW::write(0);} 
-    });
-}
 
 // LLConcateFmt is for InPipe, NLConcateFmt is for OutPipe
 // InSIgPipe is used to signal InWPipe
@@ -368,14 +366,14 @@ struct MyAutorun_MMBW_OL {
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
             In[0] = InPipe::read();
-            bool rwf = InSigPipe.read();
+            bool rwf = InSigPipe::read();
             if (rwf){ //read weights in transposed
-                for (size_t i=0; i<NL_nn; i++) W[i]=InWPipe.read();
+                for (size_t i=0; i<NL_nn; i++) W[i]=InWPipe::read();
             }
             for (size_t i=0; i<NL_nn; i++){ //L3
                 #pragma unroll
                 for (size_t j=0; j<LL_nn; j++){ //L2
-                    Out[0].s[j] += In[i].s * W[j].w[i];
+                    Out[0].s[j] += In[0].s[i] * W[j].w[i];
                 }
             }
             #pragma unroll
@@ -426,27 +424,35 @@ struct MyAutorun_MMWA {
     }
 };
 
+// todo: update args weights format as AG, consistent with compute kernels
 template <typename InW1Pipe,typename InW2Pipe, typename InB1Pipe,typename InB2Pipe>
-event Submit_Consumer(queue& q, W2Fmt *wg1_buf, W2TranspFmt *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf, size_t size) {
+event Submit_Consumer(queue& q, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf, size_t size) {
   return q.single_task<C>([=]() [[intel::kernel_args_restrict]] {
-    host_ptr<W2Fmt> wg1(wg1_buf); //needs to be intialized to all 0
-    host_ptr<W2TranspFmt> wg2(wg2_buf); //needs to be intialized to all 0
+    host_ptr<L2AG> wg1(wg1_buf); //needs to be intialized to all 0
+    host_ptr<L3AG> wg2(wg2_buf); //needs to be intialized to all 0
     host_ptr<act_fmt> bg1(biasg1_buf); //needs to be intialized to all 0
     host_ptr<act_fmt> bg2(biasg2_buf); //needs to be intialized to all 0
     for (size_t i = 0; i < size; i++) {
         for (size_t j=0; j<L1; j++){
+            L2AG res;
             L2AG w1_wg = InW1Pipe::read();
             #pragma unroll
             for (size_t k=0; k<L2; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
-                *(wg1 + j) += w1_wg.s[k]; 
-            }    
+                // *(wg1 + j).s[k] += w1_wg.s[k]; 
+                if(k==0){}
+                res.s[k] += w1_wg.s[k]; 
+            }  
+            *(wg1 + j)  = res;
         }
         for (size_t j=0; j<L2; j++){
-            L3AG w2_wg = InW1Pipe::read();
+            L3AG res;
+            L3AG w2_wg = InW2Pipe::read();
             #pragma unroll
             for (size_t k=0; k<L3; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
-                *(wg2 + j) += w2_wg.s[k];
+                // *(wg2 + j).s[k] += w2_wg.s[k];
+                res.s[k] += w2_wg.s[k];
             }    
+            *(wg2 + j)  = res;
         }
         for (size_t j=0; j<L2; j++){
             float b1_wg = InB1Pipe::read();
