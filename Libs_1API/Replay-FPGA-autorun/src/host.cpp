@@ -4,8 +4,11 @@
 // SPDX-License-Identifier: MIT
 // =============================================================
 
+// On devcloud:
+// #include <sycl/sycl.hpp>
+// On local install:
+#include <CL/sycl.hpp>
 
-#include <sycl/sycl.hpp>
 #include <sycl/ext/intel/fpga_extensions.hpp>
 
 #include <algorithm>
@@ -28,14 +31,30 @@ using namespace std::chrono;
 
 #include "include/exception_handler.hpp"
 
-// device selector
-#if FPGA_SIMULATOR
-    auto selector = sycl::ext::intel::fpga_simulator_selector_v;
-#elif FPGA_HARDWARE
-    auto selector = sycl::ext::intel::fpga_selector_v;
-#else  // #if FPGA_EMULATOR
-    auto selector = sycl::ext::intel::fpga_emulator_selector_v;
+// === on devcloud ===
+// // device selector
+// #if FPGA_SIMULATOR
+//     auto selector = sycl::ext::intel::fpga_simulator_selector_v;
+// #elif FPGA_HARDWARE
+//     auto selector = sycl::ext::intel::fpga_selector_v;
+// #else  // #if FPGA_EMULATOR
+//     auto selector = sycl::ext::intel::fpga_emulator_selector_v;
+// #endif
+
+// === on local machine ===
+  // Create device selector for the device of your interest.
+#if FPGA_EMULATOR
+  // DPC++ extension: FPGA emulator selector on systems without FPGA card.
+  ext::intel::fpga_emulator_selector selector;
+#elif FPGA
+  // DPC++ extension: FPGA selector on systems with FPGA card.
+  ext::intel::fpga_selector selector;
+#else
+  // The default device selector will select the most performant device.
+  default_selector selector;
 #endif
+
+
 // queue properties to enable profiling
 property_list prop_list { property::queue::enable_profiling() };
 
@@ -157,7 +176,7 @@ int main(int argc, char* argv[]) {
     // validate the results 
     printf("out_pr_insertion[ii]: ");
     for (size_t ii=0; ii<64; ii++){
-      printf("%f ", out_insertion_getPr_value[ii]); //should be all 0 if static init is successful. Yes!! succeeded fpga_emu May 8
+      printf("%f ", out_insertion_getPr_value[ii]); //should be all 0 if static init is successful. 
     }    
     std::cout << "\n";
 
@@ -180,8 +199,8 @@ int main(int argc, char* argv[]) {
 
     // validate the results 
     std::cout << "Completed the update kernel\n";
-    std::cout <<"Root value (updated): "<< root_pr << "\n";//should return 6.4. succeeded fpga_emu May 8
-    // On the FPGA side: PRINTF in the producer (lev1) should accumulates to 1.6 in the end. succeeded fpga_emu May 8
+    std::cout <<"Root value (updated): "<< root_pr << "\n";//should return 6.4.
+    // On the FPGA side: PRINTF in the producer (lev1) should accumulates to 1.6 in the end. 
 
     // ========== TestBench: Sampling ===========
     // size should be chunks
@@ -203,12 +222,12 @@ int main(int argc, char* argv[]) {
     for (size_t ii=0; ii<64; ii++){
       printf("%d ", out_sampled_idx[ii]);
     } 
-    // 1st 16 elements should be: {0 9 13 62 49 30 36 19 60 1 8 16 32 27 40 31}. succeeded fpga_emu May 8
+    // 1st 16 elements should be: {0 9 13 62 49 30 36 19 60 1 8 16 32 27 40 31}.
     std::cout << "Sampled values results:\n";
     for (size_t ii=0; ii<64; ii++){
       printf("%f ", out_sampled_value[ii]);
     } 
-    // 1st 16 elements should all be 0.1. succeeded fpga_emu May 8
+    // 1st 16 elements should all be 0.1. 
     ////////////////////////////////////////////////////////////////////////////
 
     // free the USM pointers

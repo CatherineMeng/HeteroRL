@@ -1,7 +1,11 @@
 #ifndef __RMM_HPP__
 #define __RMM_HPP__
 
-#include <sycl/sycl.hpp>
+// On devcloud:
+// #include <sycl/sycl.hpp>
+// On local install:
+#include <CL/sycl.hpp>
+
 #include <sycl/ext/intel/fpga_extensions.hpp>
 
 #include <iomanip>  // for std::setprecision

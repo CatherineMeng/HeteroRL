@@ -1,4 +1,4 @@
-## Sum Tree for Replay on FPGA
+## Sum Tree for Replay on FPGA - Devcloud
 
 Note: To support static SRAM management without future releaase of "device global", build kernels that process tree levels with one-time one-chip Tree initialization outside of a while(1) loop.  This also gets rid of the "Init" component of the request structs communicated through the kernels. Put all streaming requests processing inside the while(1) loop.
 The producer and consumer kernels are separated out and they are now only responsible for host<->device data streaming. The (D-1)-layer tree processing kernels are all auto-run.
@@ -47,4 +47,16 @@ make fpga_sim
 Re-organized with src folder and cmake:
 ```
 make fpga
+```
+
+## Sum Tree for Replay on FPGA - Local, DE10
+#################################################
+####### Local machine with DE-10 board, July 4
+#################################################
+Added Makefile.fpga
+
+### FPGA Emulation
+```
+make -f Makefile.fpga fpga_emu
+./rmm-buffers.fpga_emu
 ```
