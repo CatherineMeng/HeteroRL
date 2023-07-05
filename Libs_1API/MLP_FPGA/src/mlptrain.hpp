@@ -39,20 +39,20 @@ using namespace sycl;
 
 // typedefs
 // using weight_fmt = float; //using an array-struct for fasterr streaming
-using act_fmt = float;
+// using act_fmt = float;
 
 // Just for inf
 typedef struct {
-	act_fmt s[L1]; //current state
-    act_fmt snt[L1]; //next state
+	float s[L1]; //current state
+    float snt[L1]; //next state
 } StateConcate;
 typedef struct {
-	act_fmt s[L2]; //L2 act/gr of current state
-    act_fmt snt[L2]; //L2 act/gr next state
+	float s[L2]; //L2 act/gr of current state
+    float snt[L2]; //L2 act/gr next state
 } L2ItmConcate;
 typedef struct {
-	act_fmt s[L3]; //L3 act/gr of current state
-    act_fmt snt[L3]; //L3 act/gr next state
+	float s[L3]; //L3 act/gr of current state
+    float snt[L3]; //L3 act/gr next state
 } L3ItmConcate;
 typedef struct {
 	float w[L1];
@@ -65,13 +65,13 @@ typedef struct { //L3
 	float w[L3];
 } W2TranspFmt; //assume weights are float
 typedef struct {
-	act_fmt s[L1]; //current state
+	float s[L1]; //current state
 } L1AG;
 typedef struct {
-	act_fmt s[L2]; //L2 act/gr of current state
+	float s[L2]; //L2 act/gr of current state
 } L2AG;
 typedef struct {
-	act_fmt s[L3]; //L3 act/gr of current state
+	float s[L3]; //L3 act/gr of current state
 } L3AG;
 // juust for obj
 typedef struct {
@@ -105,6 +105,7 @@ using RDonePipe = ext::intel::pipe<class RDonePipeClass, RDone,64>;
 
 using L12Pipe = ext::intel::pipe<class L12PipeClass, L2ItmConcate,1>;
 using A1Pipe = ext::intel::pipe<class A1PipeClass, L2AG,8>; //its depth should be >= processed sub-batch size (chunk size)
+using ActDrFWPipe= ext::intel::pipe<class ActDrFWPipeClass, L2AG,8>; 
 
 using L23Pipe = ext::intel::pipe<class L23PipeClass, L3ItmConcate,1>;
 
@@ -129,7 +130,7 @@ using writeB2Pipe = ext::intel::pipe<class writeB2PipeClass, float,L3>;
 
 
 template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename OutPipeB1, typename OutPipeB2, typename OutSigPipeW1, typename OutSigPipeW2, typename A0bufPipe, typename rdPipe, typename OutPipeW2T, typename OutSigPipeW2T>
-event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf, W2TranspFmt *w2t_buf,
+event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, float *bias1_buf, float *bias2_buf, RDone *rdone_buf, W2TranspFmt *w2t_buf,
                       size_t size, bool stream_w) { //size is (sub-)batch size here, not state size
     
     // ext::oneapi::experimental::printf("***submit the producer\n");
@@ -137,8 +138,8 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
         host_ptr<StateConcate> state_in(state_in_buf);
         host_ptr<W1Fmt> w1_in(w1_buf);
         host_ptr<W2Fmt> w2_in(w2_buf);
-        host_ptr<act_fmt> b1_in(bias1_buf);
-        host_ptr<act_fmt> b2_in(bias2_buf);
+        host_ptr<float> b1_in(bias1_buf);
+        host_ptr<float> b2_in(bias2_buf);
         host_ptr<RDone> rd_in(rdone_buf);
         host_ptr<W2TranspFmt> w2t_in(w2t_buf);
         
@@ -160,7 +161,11 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
             for (size_t i = 0; i < L2; i++){
                 // ext::oneapi::experimental::printf("***writing W1\n");
                 OutPipeW1::write(w1_in[i]); 
+                // for (size_t j=0; j<L1; j++){
+                //     std::cout<<w1_in[i].w[j]<<' ';
+                // }
                 OutPipeB1::write(b1_in[i]);
+                // std::cout<<"b_in[i]: "<<b1_in<<'\n';
                 OutSigPipeW1::write(1);
             }
             // ext::oneapi::experimental::printf("***writing W2\n");
@@ -221,12 +226,12 @@ struct MyAutorun_MMFW {
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
             PRINTF("\nFPGA: FW pipe reading weights and bias\n");
-            PRINTF("FPGA: FW pipe reading s and snts:\n");
+            // PRINTF("FPGA: FW pipe reading s and snts:\n");
             In[0] = InPipe::read();
-            for (size_t i=0; i<LL_nn; i++){
-                PRINTF("%f ",In[0].s[i]);
-                PRINTF("%f ",In[0].snt[i]);
-            }
+            // for (size_t i=0; i<LL_nn; i++){
+                // PRINTF("%f ",In[0].s[i]); //checked-correct
+                // PRINTF("%f ",In[0].snt[i]); //checked-correct
+            // }
             bool rwf = InSigPipe::read();
             if (rwf){
                 for (size_t i=0; i<NL_nn; i++){
@@ -234,10 +239,24 @@ struct MyAutorun_MMFW {
                     B[i]=InBPipe::read();
                 }
             }
-            PRINTF("FPGA: FW MM\n");
+            // for (size_t i=0; i<L1; i++){
+            //     for (size_t j=0; j<L2; j++){
+            //         PRINTF("%f ",W[j].w[i]); //checked-correct
+            //     }
+            //     PRINTF("\n");
+            // }
+            // for (size_t j=0; j<L2; j++){PRINTF("%f ",B[j]);} //checked-correct
+            PRINTF("FPGA: Computing FW MM\n");
+            #pragma unroll
+            for (size_t j=0; j<NL_nn; j++){
+                // init, +bias 
+                Out[0].s[j]=B[j];
+                Out[0].snt[j]= B[j]; 
+            }
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){
+                    // if(j==0)Out[0].s[j]=0;
                     Out[0].s[j] += In[0].s[i] * W[j].w[i];
                     Out[0].snt[j] += In[0].snt[i] * W[j].w[i];
                 }
@@ -246,18 +265,17 @@ struct MyAutorun_MMFW {
             #pragma unroll
             for (size_t i=0; i<NL_nn; i++){
                 // bias 
-                Out[0].s[i] += B[i]; 
-                Out[0].snt[i] += B[i]; 
+                // Out[0].s[i] += B[i]; 
+                // Out[0].snt[i] += B[i]; 
                 //activation (Relu)
                 if (Out[0].s[i]<0) Out[0].s[i]=0;
                 if (Out[0].snt[i]<0) Out[0].snt[i]=0;
             }      
-            PRINTF("\nFPGA: L1 FW outputs from s and snt:\n");   
-            for (size_t i=0; i<NL_nn; i++){
-                PRINTF("%f ", Out[0].s[i]);
-                PRINTF("%f ", Out[0].snt[i]);
-            }  
-
+            // PRINTF("\nFPGA: L1 FW outputs from s and snt:\n");   
+            // for (size_t i=0; i<NL_nn; i++){
+            //     PRINTF("%f ", Out[0].s[i]);
+            //     PRINTF("%f ", Out[0].snt[i]);
+            // }  //checked-correct
             OutPipe::write(Out[0]); 
             NLAGFmt actdata;   
             for (size_t i=0; i<NL_nn; i++){
@@ -306,6 +324,12 @@ struct MyAutorun_MMFW_OL {
                     B[i]=InBPipe::read();
                 }
             }
+            #pragma unroll
+            for (size_t j=0; j<NL_nn; j++){
+                // init, +bias 
+                Out[0].s[j]=B[j];
+                Out[0].snt[j]= B[j]; 
+            }
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){
@@ -316,12 +340,17 @@ struct MyAutorun_MMFW_OL {
             #pragma unroll
             for (size_t i=0; i<NL_nn; i++){
                 // bias 
-                Out[0].s[i] += B[i]; 
-                Out[0].snt[i] += B[i]; 
+                // Out[0].s[i] += B[i]; 
+                // Out[0].snt[i] += B[i]; 
                 //activation (Relu)
                 if (Out[0].s[i]<0) Out[0].s[i]=0;
                 if (Out[0].snt[i]<0) Out[0].snt[i]=0;
-            }         
+            }     
+            // PRINTF("\nFPGA: L2 FW outputs from s and snt:\n");   
+            // for (size_t i=0; i<NL_nn; i++){
+            //     PRINTF("%f ", Out[0].s[i]);
+            //     PRINTF("%f ", Out[0].snt[i]);
+            // }  //checked - correct
             OutPipe::write(Out[0]); 
         }
     }
@@ -349,10 +378,12 @@ struct MyAutorun_OBJ {
             for (size_t i=0; i<OL_nn; i++){
                 if (Qs.snt[i]>maxQsnt) maxQsnt=Qs.snt[i];
             }
+            PRINTF("\nFPGA: OBJ outputs:\n");  
             #pragma unroll
             for (size_t i=0; i<OL_nn; i++){
                 out[0].s[i] = (rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i]) * (Qs.s[i] > 0 ? 1 : 0);
                 // (Qs.s[i] > 0 ? 1 : 0) is the ct derivative
+                PRINTF("%f ", out[0].s[i]); //checked - correct
             }         
             OutPipe::write(out[0]); 
             DOLPipe::write(out[0]); 
@@ -360,6 +391,7 @@ struct MyAutorun_OBJ {
     }
 };
 
+// weight_fmt is W2TranspFmt, W size L2, each W2TranspFmt size L3
 
 // LLConcateFmt is for InPipe, NLConcateFmt is for OutPipe
 // InSIgPipe is used to signal InWPipe
@@ -392,21 +424,28 @@ struct MyAutorun_MMBW_OL {
             // PRINTF("itm kernel, j: %d\n",j);
             In[0] = InPipe::read();
             bool rwf = InSigPipe::read();
+            // PRINTF("\nFPGA: weights in transposed:\n");  //checked - correct
             if (rwf){ //read weights in transposed
-                for (size_t i=0; i<NL_nn; i++) W[i]=InWPipe::read();
+                for (size_t i=0; i<NL_nn; i++) { //L2
+                    W[i]=InWPipe::read();
+                    // for(size_t j=0; j<LL_nn; j++){ //L3
+                        // PRINTF("%f ",W[i].w[j]);  //checked - correct
+                    // }
+                    // PRINTF("\n"); 
+                }
             }
-            for (size_t i=0; i<NL_nn; i++){ //L3
+            // PRINTF("\nFPGA: BW outputs:\n"); //checked - correct
+            for (size_t j=0; j<LL_nn; j++)Out[0].s[j]=0;
+            for (size_t i=0; i<LL_nn; i++){ //L3
                 #pragma unroll
-                for (size_t j=0; j<LL_nn; j++){ //L2
+                for (size_t j=0; j<NL_nn; j++){ //L2
                     Out[0].s[j] += In[0].s[i] * W[j].w[i];
                 }
             }
-            #pragma unroll
-            for (size_t i=0; i<NL_nn; i++){
-                //activation derivative (Relu deriv)
-                if (Out[0].s[i]<0) Out[0].s[i]=0;
-                else Out[0].s[i]=1;
-            }         
+            // for (size_t i=0; i<NL_nn; i++){
+            //     PRINTF("%f ", Out[0].s[i]);//checked - correct
+            // }      
+            
             OutPipe::write(Out[0]); 
         }
     }
@@ -415,10 +454,11 @@ struct MyAutorun_MMBW_OL {
 // act: LL_nn, delta: NL_nn
 // LL*1, 1*NL
 // output (OutFmt) wraps NL as a struct array (width of OutPipe = NL)
+// OutnextWAPipe is used to send hiddenlayer outputs (size: LL_nn) to the previous-layers' WA modules, as those need to multiply BW gradients with act-derivetives of thhes hidden outputs.
 template<typename KernelClass, typename ActFmt, typename GrdFmt, typename OutFmt, 
-         typename ActPipe, typename GrdPipe, typename OutWPipe, typename OutBPipe, 
+         typename ActPipe, typename GrdPipe, typename OutWPipe, typename OutBPipe, typename OutnextWAPipe,
          int LL_nn, int NL_nn>
-struct MyAutorun_MMWA {
+struct MyAutorun_MMWA_OL {
     void operator()() const {
         // on-chip arrays holding w,b,itm results
         [[intel::singlepump,
@@ -429,68 +469,123 @@ struct MyAutorun_MMWA {
         [[intel::fpga_register]]
         float OutB[NL_nn];
 
-        // ext::oneapi::experimental::printf("*****In WA\n");
         while(1){
-            // PRINTF("itm kernel, j: %d\n",j);
             ActFmt act_arr = ActPipe::read();
             GrdFmt grd_arr = GrdPipe::read();
+            // PRINTF("\nFPGA: WA outputs for %d * %d:\n",LL_nn,NL_nn);  
+
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){ 
                     OutW[i].s[j] = act_arr.s[i] * grd_arr.s[j];
+                    // PRINTF("%f ", OutW[i].s[j]); //checked - correct 
                 }
+                // PRINTF("\n");
                 OutWPipe::write(OutW[i]); 
-                // ext::oneapi::experimental::printf("***write W in WA\n");
             }                
             for (size_t j=0; j<NL_nn; j++){ 
-                OutB[j] = OutW[0].s[j];
+                OutB[j] = grd_arr.s[j];
                 OutBPipe::write(OutB[j]); 
             }
             // for (size_t i=0; i<LL_nn; i++){
             //     OutWPipe::write(OutW[i]);     
-            // }         
+            // }     
+            OutnextWAPipe::write(act_arr);
+        }
+    }
+};
+
+
+// act: LL_nn, delta: NL_nn
+// LL*1, 1*NL
+// output (OutFmt) wraps NL as a struct array (width of OutPipe = NL)
+// InLastWAPipe is used to rerceive hiddenlayer outputs (size: NL_nn) from the next-layers' WA modules
+template<typename KernelClass, typename ActFmt, typename GrdFmt, typename OutFmt, 
+         typename ActPipe, typename GrdPipe, typename InLastWAPipe, typename OutWPipe, typename OutBPipe,
+         int LL_nn, int NL_nn>
+struct MyAutorun_MMWA {
+    void operator()() const {
+        // on-chip arrays holding w,b,itm results
+        [[intel::singlepump,
+        intel::fpga_memory("MLAB"),
+        intel::numbanks(1)]]
+        OutFmt OutW[LL_nn]; //L1
+        // PRINTF("in fpga kernel ...\n");
+        [[intel::fpga_register]]
+        float OutB[NL_nn]; //L2
+
+        while(1){
+            ActFmt act_arr = ActPipe::read();
+            GrdFmt grd_arr = GrdPipe::read();
+            GrdFmt h_out = InLastWAPipe::read();
+            PRINTF("\nFPGA: Bias outputs for %d * 1:\n",NL_nn);  
+            // #pragma unroll
+            for (size_t j=0; j<NL_nn; j++){ //L2
+                PRINTF("%f ", grd_arr.s[j]); 
+                grd_arr.s[j] *= (h_out.s[j] > 0 ? 1 : 0); //hiddenOutput: activation derivative of L1-FW output, used in WA1
+                OutB[j] = grd_arr.s[j];
+                // PRINTF("%f ", h_out.s[j]); //checked-correct
+                // PRINTF("%f ", OutB[j]); //checked-correct
+                OutBPipe::write(OutB[j]); 
+            }
+            // PRINTF("\nFPGA: WA outputs for %d * %d:\n",LL_nn,NL_nn);  
+            for (size_t i=0; i<LL_nn; i++){//L1
+                #pragma unroll
+                for (size_t j=0; j<NL_nn; j++){ //L2
+                    OutW[i].s[j] = act_arr.s[i] * grd_arr.s[j];
+                    // PRINTF("%f ", OutW[i].s[j]); //checked-correct
+                }
+                // PRINTF("\n");
+                OutWPipe::write(OutW[i]); 
+            }                
+
+            // for (size_t i=0; i<LL_nn; i++){
+            //     OutWPipe::write(OutW[i]);     
+            // }     
+            // OutnextWAPipe::write(act_arr);
         }
     }
 };
 
 // todo: update args weights format as AG, consistent with compute kernels
 template <typename InW1Pipe,typename InW2Pipe, typename InB1Pipe,typename InB2Pipe>
-event Submit_Consumer(queue& q, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf, size_t size) {
+event Submit_Consumer(queue& q, L2AG *wg1_buf, L3AG *wg2_buf, float *biasg1_buf, float *biasg2_buf, size_t size) {
   return q.single_task<C>([=]() [[intel::kernel_args_restrict]] {
     host_ptr<L2AG> wg1(wg1_buf); //needs to be intialized to all 0
     host_ptr<L3AG> wg2(wg2_buf); //needs to be intialized to all 0
-    host_ptr<act_fmt> bg1(biasg1_buf); //needs to be intialized to all 0
-    host_ptr<act_fmt> bg2(biasg2_buf); //needs to be intialized to all 0
+    host_ptr<float> bg1(biasg1_buf); //needs to be intialized to all 0
+    host_ptr<float> bg2(biasg2_buf); //needs to be intialized to all 0
     for (size_t i = 0; i < size; i++) {
         L2AG res1;
+        // #pragma unroll
+        // for (size_t k=0; k<L2; k++)res1[k]=0;
         L3AG res2;
+        // #pragma unroll
+        // for (size_t k=0; k<L3; k++)res2[k]=0;
         for (size_t j=0; j<L1; j++){
             L2AG w1_wg = InW1Pipe::read();
             #pragma unroll
-            for (size_t k=0; k<L2; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
-                // *(wg1 + j).s[k] += w1_wg.s[k]; 
-                if(k==0){}
-                res1.s[k] += w1_wg.s[k]; 
+            for (size_t k=0; k<L2; k++){ 
+                res1.s[k] = w1_wg.s[k]; 
             }  
             *(wg1 + j)  = res1;
-            // ext::oneapi::experimental::printf("***In Consumer2..\n");
+
         }
         for (size_t j=0; j<L2; j++){
             L3AG w2_wg = InW2Pipe::read();
             #pragma unroll
-            for (size_t k=0; k<L3; k++){ //aggregation within (sub-)batch: this is done i times for each loc j
-                // *(wg2 + j).s[k] += w2_wg.s[k];
-                res2.s[k] += w2_wg.s[k];
+            for (size_t k=0; k<L3; k++){
+                res2.s[k] = w2_wg.s[k];
             }    
             *(wg2 + j)  = res2;
         }
         for (size_t j=0; j<L2; j++){
             float b1_wg = InB1Pipe::read();
-            *(bg1 + j) += b1_wg;  //aggregation within (sub-)batch: this is done i times for each loc j
+            *(bg1 + j) = b1_wg;  
         }
         for (size_t j=0; j<L3; j++){
             float b2_wg = InB2Pipe::read();
-            *(bg2 + j) += b2_wg;  //aggregation within (sub-)batch: this is done i times for each loc j
+            *(bg2 + j) = b2_wg;  
         }
     }
   });

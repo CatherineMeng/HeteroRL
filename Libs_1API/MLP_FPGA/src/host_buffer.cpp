@@ -58,8 +58,8 @@ using namespace std::chrono;
 // queue properties to enable profiling
 property_list prop_list { property::queue::enable_profiling() };
 
-void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
-                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
+void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, float *bias1_buf, float *bias2_buf, RDone *rdone_buf,
+                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, float *biasg1_buf, float *biasg2_buf,
                         int bsize, size_t iterations);
 // The following functions are for validating results on the host
 void forwardPass(const float* input, const float* input_nt, const float* hiddenBiases,
@@ -82,8 +82,8 @@ void updateWeightsAndBiases(float learningRate,
                             const float* hiddenBiasGradients, const float* outputBiasGradients);
 
 // the pipes used to produce/consume data
-using ProducePipe = ext::intel::pipe<class ProducePipeClass, act_fmt,16>;
-using ConsumePipe = ext::intel::pipe<class ConsumePipe1Class, act_fmt,16>; //sampled ind
+using ProducePipe = ext::intel::pipe<class ProducePipeClass, float,16>;
+using ConsumePipe = ext::intel::pipe<class ConsumePipe1Class, float,16>; //sampled ind
 
 
 // declaring a global instance of this class causes the constructor to be called
@@ -100,27 +100,16 @@ fpga_tools::Autorun<OBJ> ar_kernel3{selector, MyAutorun_OBJ<OBJ, L3ItmConcate, L
 fpga_tools::Autorun<MM_BW> ar_kernel4{selector, MyAutorun_MMBW_OL <MM_BW, W2TranspFmt, L3AG, L2AG,
          L32Pipe, L2BWSigPipe, ReadW2bwPipe, D1Pipe, L3, L2>{}};
 
+fpga_tools::Autorun<WA2> ar_kernel6{selector, MyAutorun_MMWA_OL <WA2, L2AG, L3AG, L3AG,
+         A1Pipe, D2Pipe, writeW2Pipe, writeB2Pipe, ActDrFWPipe, L2, L3>{}};//WA2
+
 fpga_tools::Autorun<WA1> ar_kernel5{selector, MyAutorun_MMWA <WA1, L1AG, L2AG, L2AG,
-         A0Pipe, D1Pipe, writeW1Pipe, writeB1Pipe, L1, L2>{}};
-fpga_tools::Autorun<WA2> ar_kernel6{selector, MyAutorun_MMWA <WA2, L2AG, L3AG, L3AG,
-         A1Pipe, D2Pipe, writeW2Pipe, writeB2Pipe, L2, L3>{}};
+         A0Pipe, D1Pipe, ActDrFWPipe, writeW1Pipe, writeB1Pipe, L1, L2>{}}; //WA1 TODO: write the functtion and pipe for this
 
-
-
-// '''
-// '''
 
 int main(int argc, char* argv[]) {
 
-
-  // This is the number of kernels we will have in the queue at a single time.
-  // If this number is set too low (e.g. 1) then we don't take advantage of
-  // fast kernel relaunch (see the README). If this number is set to high,
-  // then the first kernel launched finishes before we are done launching all
-  // the kernels and therefore throughput is decreased.
   size_t inflight_kernels = 1;
-
-
   bool passed = true;
 
   try {
@@ -145,16 +134,16 @@ int main(int argc, char* argv[]) {
     StateConcate *state_in_buf;
     W1Fmt *w1_buf;
     W2Fmt *w2_buf;
-    act_fmt *bias1_buf;
-    act_fmt *bias2_buf;
+    float *bias1_buf;
+    float *bias2_buf;
     RDone *rdone_buf;
 
     W2TranspFmt *w2t_buf;
 
     L2AG *wg1_buf;
     L3AG *wg2_buf;
-    act_fmt *biasg1_buf;
-    act_fmt *biasg2_buf;
+    float *biasg1_buf;
+    float *biasg2_buf;
     // assume batch size 8
     int bsize=1;
     size_t iterations=1;
@@ -167,7 +156,7 @@ int main(int argc, char* argv[]) {
       std::cerr << "ERROR: could not allocate space for w1/w2_buf\n";
       std::terminate();
     }
-    if ((bias1_buf = malloc_host<act_fmt>(L2, q)) == nullptr || (bias2_buf= malloc_host<act_fmt>(L3, q)) == nullptr) {
+    if ((bias1_buf = malloc_host<float>(L2, q)) == nullptr || (bias2_buf= malloc_host<float>(L3, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for b1/b2_buf\n";
       std::terminate();
     }
@@ -183,7 +172,7 @@ int main(int argc, char* argv[]) {
       std::cerr << "ERROR: could not allocate space for wg1/wg2_buf\n";
       std::terminate();
     }
-    if ((biasg1_buf = malloc_host<act_fmt>(L2, q)) == nullptr || (biasg2_buf= malloc_host<act_fmt>(L3, q)) == nullptr) {
+    if ((biasg1_buf = malloc_host<float>(L2, q)) == nullptr || (biasg2_buf= malloc_host<float>(L3, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for bg1/bg2_buf\n";
       std::terminate();
     }
@@ -212,14 +201,14 @@ int main(int argc, char* argv[]) {
     // float outputBiases[L3] = {0.2f};
     float input[L1] = {1.0f, 2.0f, 3.0f, 4.0f};
     float input_nt[L1] = {1.2f, 2.0f, 1.0f, 3.2f};
-    float hiddenOutput[L2] = {0.0f};
-    float hiddenOutput_nt[L2] = {0.0f};
-    float output[L3] = {0.0f};
-    float output_nt[L3] = {0.0f};
+    float hiddenOutput[L2] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float hiddenOutput_nt[L2] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float output[L3] = {0.0f, 0.0f};
+    float output_nt[L3] = {0.0f, 0.0f};
 
     // Define the biases
-    float hiddenBiases[L2] = {0.1f};
-    float outputBiases[L3] = {0.2f};
+    float hiddenBiases[L2] = {0.1f, 0.1f, 0.1f, 0.1f};
+    float outputBiases[L3] = {0.2f, 0.2f};
 
     // Initialize the weights (as vectors of vectors)
     std::vector<std::vector<float>> hiddenWeights(L1, std::vector<float>(L2, 1.0f));
@@ -236,8 +225,8 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<float>> outputWeightGradients(L2, std::vector<float>(L3, 0.0f));
 
     // Define the bias gradients
-    float hiddenBiasGradients[L2] = {0.0f};
-    float outputBiasGradients[L3] = {0.0f};
+    float hiddenBiasGradients[L2] = {0.0f, 0.0f, 0.0f, 0.0f};
+    float outputBiasGradients[L3] = {0.0f, 0.0f};
 
 
     // Perform the forward pass
@@ -249,7 +238,7 @@ int main(int argc, char* argv[]) {
 
     // compare {hiddenWeightGradients, outputWeightGradients, hiddenBiasGradients, outputBiasGradients} against 
     // those output by fpga: {wg1_buf, wg2_buf, biasg1_buf, biasg2_buf}
-    std::cout<<"======= hiddenWeightGradients produced by host tb =======\n";
+    std::cout<<"\n======= hiddenWeightGradients produced by host tb =======\n";
     for (size_t i=0; i<L1; i++){
       for (size_t j=0; j<L2; j++){
         std::cout<<hiddenWeightGradients[i][j]<<' ';
@@ -288,25 +277,28 @@ int main(int argc, char* argv[]) {
     }
     // Define the biases
     for (size_t i=0; i<L2; i++) {
-      bias1_buf[i]=hiddenBiases[i];
+      bias1_buf[i]=0.1;
       biasg1_buf[i]=0;
     }
     for (size_t i=0; i<L3; i++) {
-      bias2_buf[i]=outputBiases[i];
+      bias2_buf[i]=0.2;
       biasg2_buf[i]=0;
     }
 
     // Initialize the weights
+    // std::cout<<"initializing FPGA weights"<<'\n';
     for (size_t i=0; i<L1; i++) {
       for (size_t j=0; j<L2; j++){
-        w1_buf[j].w[i]=hiddenWeights[i][j];
+        w1_buf[j].w[i]=1;
+        // std::cout<<w1_buf[j].w[i]<<' ';
         wg1_buf[i].s[j]=0;
       }
+      // std::cout<<'\n';
     }
     for (size_t i=0; i<L2; i++) {
       for (size_t j=0; j<L3; j++){
-        w2_buf[j].w[i]=outputWeights[i][j];
-        w2t_buf[i].w[j]=outputWeights[i][j];
+        w2_buf[j].w[i]=1;
+        w2t_buf[i].w[j]=1;
         wg2_buf[i].s[j]=0;
       }
     }
@@ -391,11 +383,11 @@ int main(int argc, char* argv[]) {
   }
 }
 
-// Tin:act_fmt, Tout: act_fmt
+// Tin:float, Tout: float
 // template <typename Tin, typename Tout>
 // template <typename T>
-void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
-                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
+void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, float *bias1_buf, float *bias2_buf, RDone *rdone_buf,
+                        W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, float *biasg1_buf, float *biasg2_buf,
                         int bsize, size_t iterations) {
   // timing data
 //   std::vector<double> latency_ms(iterations);
@@ -416,9 +408,9 @@ void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf
 
     // wait on the producer/consumer kernel pair to finish
     p_e1.wait();    // producer
-    std::cout <<"producer completed "<<"\n";
+    std::cout <<"\nproducer completed "<<"\n";
     p_e3.wait();   // consumer
-    std::cout <<"consumer completed "<<"\n";
+    std::cout <<"\nconsumer completed "<<"\n";
 
 
     auto end = high_resolution_clock::now();
@@ -444,7 +436,6 @@ void forwardPass(const float* input, const float* input_nt, const float* hiddenB
                  const std::vector<std::vector<float>>& outputWeights,
                  float* hiddenOutput, float* hiddenOutput_nt, float* output, float* output_nt) {
     // Calculate hidden layer output
-    std::cout<<"Host: L1 FW outputs from s and snt:\n";
     for (int i = 0; i < L2; i++) {
         float sum = hiddenBiases[i];
         float sum_nt = hiddenBiases[i];
@@ -454,11 +445,10 @@ void forwardPass(const float* input, const float* input_nt, const float* hiddenB
         }
         hiddenOutput[i] = relu(sum);
         hiddenOutput_nt[i] = relu(sum_nt); 
-        std::cout<<hiddenOutput[i]<<' ';
-        std::cout<<hiddenOutput_nt[i]<<' ';
     }
 
     // Calculate output layer output
+    // std::cout<<"Host: L2 FW outputs from s and snt:\n";
     for (int i = 0; i < L3; i++) {
         float sum = outputBiases[i];
         float sum_nt = outputBiases[i];
@@ -468,6 +458,8 @@ void forwardPass(const float* input, const float* input_nt, const float* hiddenB
         }
         output[i] = relu(sum);
         output_nt[i] = relu(sum_nt);
+        // std::cout<<output[i]<<' ';
+        // std::cout<<output_nt[i]<<' ';
     }
 }
 
@@ -489,25 +481,40 @@ void backwardPass( const float* input, const float* hiddenOutput,
       }
     }
     // Calculate output layer gradients (OBJ)
+    // std::cout<<"Host: OBJ outputs:\n";
+    // std::cout<<"Host: WA - L2 - outputs:\n";
     for (int i = 0; i < L3; i++) {
       // rdone.r + (1-rdone.done) * gamma * maxQsnt - Qs.s[i];
         // float errorSignal = (targetOutput[i] - output[i]) * (output[i] > 0 ? 1 : 0); (update with RL obj)
         float errorSignal = (rd.r+(1-rd.done)*gamma*maxQnt - output[i]) * (output[i] > 0 ? 1 : 0);
+        // std::cout<<errorSignal<<' '; //-29.54 -29.54 
         outputBiasGradients[i] = errorSignal;
         for (int j = 0; j < L2; j++) { //(WA2)
             outputWeightGradients[j][i] = errorSignal * hiddenOutput[j];
+            // std::cout<<outputWeightGradients[j][i]<<' ';
         }
+        // std::cout<<'\n';
     }
+    std::cout<<"\n";
 
     // Calculate hidden layer gradients 
+    // std::cout<<"Host: BW - outputs:\n";
+    // std::cout<<"Host: WA1 - outputs:\n";
     for (int i = 0; i < L2; i++) {
         float errorSignal = 0.0f;
         for (int j = 0; j < L3; j++) { // (BW)
-            errorSignal += (rd.r+(1-rd.done)*gamma*maxQnt - output[i]) * (output[i] > 0 ? 1 : 0) * outputWeights[i][j];
+            errorSignal += (rd.r+(1-rd.done)*gamma*maxQnt - output[j]) * (output[j] > 0 ? 1 : 0) * outputWeights[i][j];
+            // std::cout<<"accumulates";
+            // std::cout<<(rd.r+(1-rd.done)*gamma*maxQnt - output[j]) * (output[j] > 0 ? 1 : 0)<<" * "<<outputWeights[i][j]<<' ';
         }
-        errorSignal *= (hiddenOutput[i] > 0 ? 1 : 0);
-        hiddenBiasGradients[i] = errorSignal;
-        for (int j = 0; j < L1; j++) { //(WA1)
+        // std::cout<<'\n';
+        // std::cout<<errorSignal<<' ';
+
+        // output of BW (errorSignal, size L2) is multiplied by activation derivative of L1 output, size L2
+        errorSignal *= (hiddenOutput[i] > 0 ? 1 : 0); //hiddenOutput: activation derivative of L1-FW output, used in WA1
+        // std::cout<<hiddenOutput[i]<<' ';
+        hiddenBiasGradients[i] = errorSignal; //(WA1-bias)
+        for (int j = 0; j < L1; j++) { //(WA1-w)
             hiddenWeightGradients[j][i] = errorSignal * input[j];
         }
     }

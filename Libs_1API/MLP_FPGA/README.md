@@ -70,11 +70,20 @@ qsub -I -l nodes=1:xeon:ppn=2 -d .
 ## MM / MLP inference / MLP training pipeline on FPGA - Local machine DE10
 ### FPGA Emulation
 July 4
-On Kalu:
+Using host_buffer.cpp
+If on Kalu:
 ```
 source /opt/xilinx/xrt/setup.sh
 ```
+Compile:
 ```
 make -f Makefile.fpga fpga_emu
+```
+Run:
+```
 ./mlp-buffers.fpga_emu
+```
+Clean up:
+```
+make -f Makefile.fpga fpga_emu
 ```
