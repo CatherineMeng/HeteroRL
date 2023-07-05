@@ -1,7 +1,10 @@
 #ifndef __MLPTRAIN_HPP__
 #define __MLPTRAIN_HPP__
 
-#include <sycl/sycl.hpp>
+// On devcloud:
+// #include <sycl/sycl.hpp>
+// On local install:
+#include <CL/sycl.hpp>
 #include <sycl/ext/intel/fpga_extensions.hpp>
 
 #include <iomanip>  // for std::setprecision
@@ -29,9 +32,9 @@ using namespace sycl;
   }
   
 //2-layer MLP, input (L1), hidden (L2), output (L3)
-#define L1 16 //input dimension, size(state)
-#define L2 256 //hidden dimension
-#define L3 8 //output dimension, num actions
+#define L1 4 //input dimension, size(state)
+#define L2 4 //hidden dimension
+#define L3 2 //output dimension, num actions
 // #define NL_chunksize 32 //output dimension
 
 // typedefs
@@ -124,12 +127,11 @@ using writeB2Pipe = ext::intel::pipe<class writeB2PipeClass, float,L3>;
 // CPU->FPGA, producer for FW layers and LOSS (objctv) 
 // assume input data format is already handled at host (inputs/weights/<r,done> are arrays of structs, biases are arrays of floats)
 
-// TODO: combine Submit_Producer and Submit_Producer_BW
 
 template<typename OutPipeS, typename OutPipeW1, typename OutPipeW2, typename OutPipeB1, typename OutPipeB2, typename OutSigPipeW1, typename OutSigPipeW2, typename A0bufPipe, typename rdPipe, typename OutPipeW2T, typename OutSigPipeW2T>
 event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf, W2TranspFmt *w2t_buf,
                       size_t size, bool stream_w) { //size is (sub-)batch size here, not state size
-    // std::cout<< "submit the producer\n";
+    
     // ext::oneapi::experimental::printf("***submit the producer\n");
     return q.single_task<P>([=]() [[intel::kernel_args_restrict]] {
         host_ptr<StateConcate> state_in(state_in_buf);
@@ -142,7 +144,7 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
         
         for (size_t i = 0; i < size; i++) {
             OutPipeS::write(state_in[i]); 
-            ext::oneapi::experimental::printf("***size: %d\n",size);
+            
             L1AG a0;
             #pragma unroll
             for (size_t j=0; j<L1; j++){
@@ -176,7 +178,7 @@ event Submit_Producer(queue &q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt
         } 
         else{OutSigPipeW1::write(0);OutSigPipeW2::write(0);OutSigPipeW2T::write(0);} 
     
-        PRINTF("***done with the producer\n");
+        // PRINTF("***done with the producer\n");
     });
 }
 
@@ -218,7 +220,13 @@ struct MyAutorun_MMFW {
 
         while(1){
             // PRINTF("itm kernel, j: %d\n",j);
+            PRINTF("\nFPGA: FW pipe reading weights and bias\n");
+            PRINTF("FPGA: FW pipe reading s and snts:\n");
             In[0] = InPipe::read();
+            for (size_t i=0; i<LL_nn; i++){
+                PRINTF("%f ",In[0].s[i]);
+                PRINTF("%f ",In[0].snt[i]);
+            }
             bool rwf = InSigPipe::read();
             if (rwf){
                 for (size_t i=0; i<NL_nn; i++){
@@ -226,6 +234,7 @@ struct MyAutorun_MMFW {
                     B[i]=InBPipe::read();
                 }
             }
+            PRINTF("FPGA: FW MM\n");
             for (size_t i=0; i<LL_nn; i++){
                 #pragma unroll
                 for (size_t j=0; j<NL_nn; j++){
@@ -233,6 +242,7 @@ struct MyAutorun_MMFW {
                     Out[0].snt[j] += In[0].snt[i] * W[j].w[i];
                 }
             }
+            PRINTF("FPGA: FW add bias and relu\n");
             #pragma unroll
             for (size_t i=0; i<NL_nn; i++){
                 // bias 
@@ -241,7 +251,13 @@ struct MyAutorun_MMFW {
                 //activation (Relu)
                 if (Out[0].s[i]<0) Out[0].s[i]=0;
                 if (Out[0].snt[i]<0) Out[0].snt[i]=0;
-            }         
+            }      
+            PRINTF("\nFPGA: L1 FW outputs from s and snt:\n");   
+            for (size_t i=0; i<NL_nn; i++){
+                PRINTF("%f ", Out[0].s[i]);
+                PRINTF("%f ", Out[0].snt[i]);
+            }  
+
             OutPipe::write(Out[0]); 
             NLAGFmt actdata;   
             for (size_t i=0; i<NL_nn; i++){

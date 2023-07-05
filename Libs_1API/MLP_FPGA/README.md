@@ -1,4 +1,4 @@
-## MM / MLP inference / MLP training pipeline on FPGA
+## MM / MLP inference / MLP training pipeline on FPGA - Devcloud
 
 Note: before compiling, copy the \include folder from ../Replay-FPGA-autorun into src.
 ```
@@ -64,4 +64,17 @@ qsub -I -l nodes=1:gpu:ppn=2 -d .
 CPU	
 ```
 qsub -I -l nodes=1:xeon:ppn=2 -d .
+```
+
+
+## MM / MLP inference / MLP training pipeline on FPGA - Local machine DE10
+### FPGA Emulation
+July 4
+On Kalu:
+```
+source /opt/xilinx/xrt/setup.sh
+```
+```
+make -f Makefile.fpga fpga_emu
+./mlp-buffers.fpga_emu
 ```

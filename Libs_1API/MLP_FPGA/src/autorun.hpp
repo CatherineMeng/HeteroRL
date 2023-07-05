@@ -1,7 +1,10 @@
 #ifndef __AUTORUN_HPP__
 #define __AUTORUN_HPP__
 
-#include <sycl/sycl.hpp>
+// on devcloud
+// #include <sycl/sycl.hpp>
+// on de10 machine
+#include <CL/sycl.hpp>
 #include <type_traits>
 
 /*

@@ -60,8 +60,7 @@ property_list prop_list { property::queue::enable_profiling() };
 
 void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
                         W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
-                        size_t chunks, size_t chunk_size, size_t total_count,
-                        size_t inflight_kernels, size_t iterations);
+                        int bsize, size_t iterations);
 // The following functions are for validating results on the host
 void forwardPass(const float* input, const float* input_nt, const float* hiddenBiases,
                  const std::vector<std::vector<float>>& hiddenWeights, const float* outputBiases,
@@ -112,20 +111,7 @@ fpga_tools::Autorun<WA2> ar_kernel6{selector, MyAutorun_MMWA <WA2, L2AG, L3AG, L
 // '''
 
 int main(int argc, char* argv[]) {
-  // default values
-  #if defined(FPGA_EMULATOR)
-    size_t chunks = 1;        
-    size_t chunk_size = 1;    // 1
-    size_t iterations = 1; //ToDo: This could be the batch size?
-  #elif defined(FPGA_SIMULATOR)
-    size_t chunks = 1;         
-    size_t chunk_size = 1;    // 1
-    size_t iterations = 1; //ToDo: This could be the batch size?
-  #else
-    size_t chunks = 8;       
-    size_t chunk_size = 1;   // 1
-    size_t iterations = 1; //ToDo: This could be the batch size?
-  #endif
+
 
   // This is the number of kernels we will have in the queue at a single time.
   // If this number is set too low (e.g. 1) then we don't take advantage of
@@ -133,14 +119,7 @@ int main(int argc, char* argv[]) {
   // then the first kernel launched finishes before we are done launching all
   // the kernels and therefore throughput is decreased.
   size_t inflight_kernels = 1;
-  // compute the total number of elements
-  size_t total_count = chunks * chunk_size;
 
-  std::cout << "# Chunks:             " << chunks << "\n";
-  std::cout << "Chunk size:          " << chunk_size << "\n";
-  std::cout << "Total count:          " << total_count << "\n";
-  std::cout << "Iterations:           " << iterations-1 << "\n";
-  std::cout << "\n";
 
   bool passed = true;
 
@@ -177,7 +156,10 @@ int main(int argc, char* argv[]) {
     act_fmt *biasg1_buf;
     act_fmt *biasg2_buf;
     // assume batch size 8
-    if ((state_in_buf = malloc_host<StateConcate>(chunks*chunk_size, q)) == nullptr) {
+    int bsize=1;
+    size_t iterations=1;
+    
+    if ((state_in_buf = malloc_host<StateConcate>(bsize, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for 'state_in_buf'\n";
       std::terminate();
     }
@@ -189,7 +171,7 @@ int main(int argc, char* argv[]) {
       std::cerr << "ERROR: could not allocate space for b1/b2_buf\n";
       std::terminate();
     }
-    if ((rdone_buf= malloc_host<RDone>(chunks*chunk_size, q)) == nullptr) {
+    if ((rdone_buf= malloc_host<RDone>(bsize, q)) == nullptr) {
       std::cerr << "ERROR: could not allocate space for 'RDone buf'\n";
       std::terminate();
     }
@@ -331,10 +313,11 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Running the MLP train FPGA kernel\n";
     
+    
     // std::cout << "hi1\n";std::cout << "hi2\n";std::cout << "hi3\n";
     DoWorkMultiKernel(q, state_in_buf, w1_buf, w2_buf, bias1_buf, bias2_buf, rdone_buf, w2t_buf, 
     wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, 
-    chunks, chunk_size, total_count, inflight_kernels, iterations);
+    bsize, iterations);
 
 
     // for (size_t ii=0; ii<8; ii++){
@@ -413,81 +396,30 @@ int main(int argc, char* argv[]) {
 // template <typename T>
 void DoWorkMultiKernel(sycl::queue& q, StateConcate *state_in_buf, W1Fmt *w1_buf, W2Fmt *w2_buf, act_fmt *bias1_buf, act_fmt *bias2_buf, RDone *rdone_buf,
                         W2TranspFmt *w2t_buf, L2AG *wg1_buf, L3AG *wg2_buf, act_fmt *biasg1_buf, act_fmt *biasg2_buf,
-                        size_t chunks, size_t chunk_size, size_t total_count,
-                        size_t inflight_kernels, size_t iterations) {
+                        int bsize, size_t iterations) {
   // timing data
 //   std::vector<double> latency_ms(iterations);
 //   std::vector<double> process_time_ms(iterations);
-
-  size_t in_chunk = 0; // count the number of chunks for which kernels have been started
-  size_t out_chunk = 0; // count the number of chunks for which kernels have finished 
-  // use a queue to track the kernels in flight
   std::queue<std::pair<event,event>> event_q;
   for (size_t i = 0; i < iterations; i++) {
-    // std::cout <<"in interation i = "<<i<<"\n";
-    // reset the output data to catch any untouched data
-    // std::fill_n(out, NL, -1);
-    // reset counters
-    in_chunk = 0;
-    out_chunk = 0;
+
     // clear the queue
     std::queue<std::pair<event,event>> clear_q;
 
     std::swap(event_q, clear_q);
 
-    do {
-      // if we still have kernels to launch, launch them in here
-      if (in_chunk < chunks) {
-        // std::cout <<"in_chunk: "<<in_chunk<<"\n";
-        // launch the producer/consumer pair for the next chunk of data
-        size_t chunk_offset = in_chunk*chunk_size;
+    event p_e1 = Submit_Producer<SinPipe,ReadW1Pipe,ReadW2Pipe,
+                                  ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe,ReadW2bwPipe,L2BWSigPipe>
+                                  (q, state_in_buf , w1_buf , w2_buf , bias1_buf , bias2_buf , rdone_buf , w2t_buf , bsize, 1); //rest of chunks is 0   
+    event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe>(q, wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, bsize);
 
-        // event p_e = Submit_Producer<ProducePipe>(q, in + chunk_offset, chunk_size);   
-        // event c_e = Submit_Consumer<ConsumePipe>(q, out + chunk_offset, chunk_size);
-        event p_e1 = Submit_Producer<SinPipe,ReadW1Pipe,ReadW2Pipe,
-                                    ReadB1Pipe,ReadB2Pipe,L1FWSigPipe,L2FWSigPipe,A0Pipe,RDonePipe,ReadW2bwPipe,L2BWSigPipe>
-                                    (q, state_in_buf + chunk_offset, w1_buf + chunk_offset, w2_buf + chunk_offset, bias1_buf + chunk_offset, bias2_buf + chunk_offset, rdone_buf + chunk_offset, w2t_buf + chunk_offset, chunk_size, 1); //rest of chunks is 0   
-        // event p_e2 = Submit_Producer_BW<ReadW2bwPipe,L2BWSigPipe>(q, w2t_buf, 1); //rest of chunks is 0 
-        event p_e3 = Submit_Consumer<writeW1Pipe,writeW2Pipe,writeB1Pipe,writeB2Pipe>(q, wg1_buf, wg2_buf, biasg1_buf, biasg2_buf, chunk_size);
-        // push the kernel event into the queue
-        event_q.push(std::make_pair(p_e1, p_e3));
-        // event_q.push(std::make_tuple(p_e1,p_e2,p_e3));
 
-        // if this is the first chunk, track the time
-        // if (in_chunk == 0) first_data_in = high_resolution_clock::now();
-        in_chunk++;
-      }
+    // wait on the producer/consumer kernel pair to finish
+    p_e1.wait();    // producer
+    std::cout <<"producer completed "<<"\n";
+    p_e3.wait();   // consumer
+    std::cout <<"consumer completed "<<"\n";
 
-      // wait on the oldest kernel to finish if any of these conditions are met:
-      //    1) there are a certain number kernels in flight
-      //    2) all of the kernels have been launched
-      //
-      // NOTE: 'inflight_kernels' is now the number of inflight
-      // producer/consumer kernel pairs
-      std::cout <<"here "<<"\n";
-      if ((event_q.size() >= inflight_kernels) || (in_chunk >= chunks)) {
-        // grab the oldest kernel event we are waiting on
-        auto event_pair = event_q.front();
-        event_q.pop();
-        std::cout <<"event_q.pop(); "<<"\n";
-
-        // wait on the producer/consumer kernel pair to finish
-        event_pair.first.wait();    // producer
-        std::cout <<"producer completed "<<"\n";
-        event_pair.second.wait();   // consumer
-        std::cout <<"consumer completed "<<"\n";
-        // std::get<0>(event_pair).wait();
-        // std::get<1>(event_pair).wait();
-        // std::get<2>(event_pair).wait();
-
-        // track the time if this is the first producer/consumer pair
-        // if (out_chunk == 0) first_data_out = high_resolution_clock::now();
-
-        // at this point the first 'out_chunk' chunks are ready to be
-        // processed on the host
-        out_chunk++;
-      }
-    } while(out_chunk < chunks);
 
     auto end = high_resolution_clock::now();
 
@@ -512,6 +444,7 @@ void forwardPass(const float* input, const float* input_nt, const float* hiddenB
                  const std::vector<std::vector<float>>& outputWeights,
                  float* hiddenOutput, float* hiddenOutput_nt, float* output, float* output_nt) {
     // Calculate hidden layer output
+    std::cout<<"Host: L1 FW outputs from s and snt:\n";
     for (int i = 0; i < L2; i++) {
         float sum = hiddenBiases[i];
         float sum_nt = hiddenBiases[i];
@@ -521,6 +454,8 @@ void forwardPass(const float* input, const float* input_nt, const float* hiddenB
         }
         hiddenOutput[i] = relu(sum);
         hiddenOutput_nt[i] = relu(sum_nt); 
+        std::cout<<hiddenOutput[i]<<' ';
+        std::cout<<hiddenOutput_nt[i]<<' ';
     }
 
     // Calculate output layer output
