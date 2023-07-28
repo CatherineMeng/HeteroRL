@@ -29,7 +29,7 @@ gamma = 0.99
 input_size = 4  # CartPole-v0 has an observation space of size 4
 hidden_size = 8
 output_size = 2  # Two possible actions: 0 (left) and 1 (right)
-num_training_eps = 1000
+num_training_eps = 10000
 
 # Define a function to run the actor process
 # def actor_process(conn, actor_id, policy_net, memory, n_actions):
