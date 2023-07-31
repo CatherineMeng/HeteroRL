@@ -4,6 +4,7 @@ Replay is managed on master, can be offloaded to accelerator_replay
 Learner has its separate thread, can be offloaded to a different accelerator than accelerator_replay
 ''' 
 
+import time
 import gym
 import torch
 import torch.optim as optim
@@ -105,6 +106,7 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             transitions = data_transfer_conn.recv()
             # print("Learner itr",learn_itr_cnt,"received data from master")
             batch = list(zip(*transitions))
+            # print("batch[0]:",batch[0])
             state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
             action_batch = torch.tensor(batch[1], dtype=torch.int64).to(device)
             reward_batch = torch.tensor(batch[2], dtype=torch.float32).to(device)
@@ -154,6 +156,7 @@ def main():
     # Create pipes for communication between the master process and the learner process
     data_transfer_pipe = Pipe()
 
+    t_start = time.perf_counter()
     # Create and start actor processes
     actor_processes = [Process(target=actor_process, args=(actor_pipe[0], i, pipe_data[1]))
                     for i, (actor_pipe, pipe_data) in enumerate(zip(actor_pipes,data_collection_pipes))]
@@ -179,6 +182,8 @@ def main():
                     n_actors_done+=1
                     data_transfer_pipe[1].send("Train done from master")
                     print("============REACHED MAIN BREAK============")
+                    t_end = time.perf_counter()
+                    print("total time for",num_training_eps,"training epiodes:",t_end-t_start)
                     # break 
                 else:
                     replay_memory.push(sample)

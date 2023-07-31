@@ -93,6 +93,10 @@ class PrioritizedReplayMemory:
         self.data = {key: 0 for key in range(capacity)}
         self.data_pointer = 0
         self.epsilon = 0.01
+        self.current_size = 0
+
+    def get_current_size(self):
+        return self.current_size
 
     # for inserting a new experience
     def _get_priority(self, td_error):
@@ -104,6 +108,8 @@ class PrioritizedReplayMemory:
         # self.data.append(transition)
         self.data[self.data_pointer] = transition
         self.data_pointer = (self.data_pointer + 1) % self.capacity
+        if (self.current_size<self.capacity):
+            self.current_size+=1
         # print("pushing data into data storage index",self.data_pointer)
 
     def sample(self, batch_size):
