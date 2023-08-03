@@ -144,7 +144,7 @@ class PrioritizedReplayMemory:
     # Therefore, the same tree_indices (as returned by sampling) can be used for update without modification
     def update_priorities(self, tree_indices, td_errors):
         for tree_index, td_error in zip(tree_indices, td_errors):
-            assert(tree_index >=- self.tree.capacity - 1)
+            assert(tree_index >= self.tree.capacity - 1)
             assert(tree_index < 2*self.tree.capacity - 1)
             priority = self._get_priority(td_error)
             self.tree.update(tree_index, priority)

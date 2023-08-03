@@ -8,11 +8,11 @@ class TestData:
 # Test code for ReplayMemory with SumTree
 if __name__ == '__main__':
 
-    capacity = 27*9
-    # capacity = 2**8
-    fanout=3
-    # memory = PrioritizedReplayMemory(capacity)
-    memory = PrioritizedReplayMemory_n(capacity,fanout)
+    # capacity = 27*9
+    capacity = 2**9
+    # fanout=3
+    memory = PrioritizedReplayMemory(capacity)
+    # memory = PrioritizedReplayMemory_n(capacity,fanout)
 
     # Generate random data for testing
     random_data = [TestData(random.random()) for _ in range(capacity)]
