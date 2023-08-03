@@ -1,7 +1,7 @@
 import random
 import torch
 from replay_cgpu import SumTree,PrioritizedReplayMemory
-# from replay_cgpu import SumTreenary,PrioritizedReplayMemory_n
+from replay_cgpu import SumTreenary,PrioritizedReplayMemory_n
 class TestData:
     def __init__(self, value):
         self.value = value
@@ -16,9 +16,10 @@ if __name__ == '__main__':
     # memory = PrioritizedReplayMemory_n(capacity,fanout)
 
     intree_bs=2**2
+    # intree_bs=3
     
     # Test add operation
-    for i in range(capacity//2**2):
+    for i in range(capacity//intree_bs):
         # priority = random.random()*capacity*100
         priority = torch.rand(intree_bs)
         # Generate random data for testing
@@ -30,7 +31,7 @@ if __name__ == '__main__':
     priority = torch.rand(intree_bs)
     memory.push(random_data, priority) 
 
-    for i in range(100):
+    for i in range(1):
         # Test sample operation
         batch_size = 64
         batch, indexes= memory.sample(batch_size)
