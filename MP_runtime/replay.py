@@ -170,15 +170,16 @@ class SumTreenary:
         # self.full_tree_size - self.capacity = capacity is the total number of non-leaf nodes
         assert(self.capacity==fanout**(i-1))
         print("num leaf nodes:",fanout**(i-1))
+        self.num_non_leaf=full_tree_size-capacity
     
         self.tree = {key: 0 for key in range(full_tree_size)}
 
         self.data_pointer = 0
 
     def add(self, priority):
-        tree_index = self.data_pointer 
+        tree_index = self.data_pointer + self.num_non_leaf
         self.update(tree_index, priority)
-        # print("insertion updating tree index:",self.data_pointer)
+        print("insertion updating tree index:",tree_index)
         self.data_pointer = (self.data_pointer + 1) % self.capacity
         
     def update(self, tree_index, priority):
@@ -194,21 +195,32 @@ class SumTreenary:
     def get_leaf(self, v):
         parent_index = 0
 
+        # level=0 #for debugging
         while True:
+            
             left_child_index = self.fanout * parent_index + 1
             right_child_index = left_child_index + self.fanout-1
 
             if left_child_index >= len(self.tree):
                 leaf_index = parent_index
                 break
-            else: #TODO: change this to n-ary logic
-                if v <= self.tree[left_child_index]:
-                    parent_index = left_child_index
-                else:
-                    v -= self.tree[left_child_index]
-                    parent_index = right_child_index
-
+            else: 
+                psum = self.tree[left_child_index]
+                child_pointer = left_child_index
+                # print("level",level,"starting at index",child_pointer)#for debugging
+                while (psum <= v):
+                    psum += self.tree[child_pointer]
+                    if (child_pointer == right_child_index):
+                        break
+                    child_pointer += 1
+                    # print("level",level,"moving to index",child_pointer) #for debugging
+                v -= self.tree[child_pointer]
+                parent_index = child_pointer
+                assert(child_pointer <= right_child_index)
+            # level+=1 #for debugging
+        # returned leaf_index is tree node index, not data storage index, so caan be directly used for update
         return leaf_index, self.tree[leaf_index]
+        
 
     def total_priority(self):
         return self.tree[0]
@@ -261,7 +273,7 @@ class PrioritizedReplayMemory_n:
             # assertions: sampled index is a tree leaf index
             assert(index >= self.tree.full_tree_size - self.tree.capacity)
             assert(index < self.tree.full_tree_size)
-            print("sampling data with index:",index - (self.tree.full_tree_size - self.tree.capacity))
+            # print("sampling data with index:",index - (self.tree.full_tree_size - self.tree.capacity))
 
         return batch, indexes
 

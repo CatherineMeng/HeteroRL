@@ -8,11 +8,11 @@ class TestData:
 # Test code for ReplayMemory with SumTree
 if __name__ == '__main__':
 
-    # capacity = 27*9
-    capacity = 2**8
-    # fanout=3
-    memory = PrioritizedReplayMemory(capacity)
-    # memory = PrioritizedReplayMemory_n(capacity,fanout)
+    capacity = 27*9
+    # capacity = 2**8
+    fanout=3
+    # memory = PrioritizedReplayMemory(capacity)
+    memory = PrioritizedReplayMemory_n(capacity,fanout)
 
     # Generate random data for testing
     random_data = [TestData(random.random()) for _ in range(capacity)]
@@ -24,7 +24,8 @@ if __name__ == '__main__':
     memory.push(random_data[i], priority) #test circular buffer. yes
 
     # Test sample operation
-    batch_size = 64
+    # batch_size = 64
+    batch_size = 16
     batch, indexes= memory.sample(batch_size)
     assert len(batch) == batch_size
     assert len(indexes) == batch_size
