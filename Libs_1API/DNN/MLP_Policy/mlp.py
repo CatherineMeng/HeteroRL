@@ -9,9 +9,11 @@ import time
 if torch.cuda.is_available():
     device = torch.device("cuda")  # Use GPU if available
     print("USING GPU")
-else:
-    device = torch.device("cpu")
+# else:
+#     device = torch.device("cpu")
 
+# device = torch.device("cpu")
+# torch.set_num_threads(32)
 class DQN(nn.Module):
     def __init__(self, state_dim, hidden_size, num_actions):
         super(DQN, self).__init__()
@@ -43,7 +45,7 @@ class Trainer:
         self.num_actions=num_actions
         # self.buffer = ExperienceReplay(capacity)  # Uncomment and implement the ExperienceReplay class.
 
-    def compute_td_loss(self, batch_size, gamma):
+    def compute_td_loss(self, batch_size, gamma, batch):
         # Code for buffer sampling is commented out as it's not implemented here.
         # Replace it with actual buffer implementation later if needed.
 
@@ -51,20 +53,11 @@ class Trainer:
         # batch = self.buffer.sample_queue(batch_size)
 
         # Instead of loading samples from the buffer, let's create random tensors for demonstration
-        batch = []
-        for _ in range(batch_size):
-            s_tensor = torch.rand((1, 4), requires_grad=True)
-            ns_tensor = torch.rand((1, 4), requires_grad=True)
-            a_tensor = torch.randint(0, num_actions, (1,), dtype=torch.long)
-            r_tensor = torch.rand((1,), requires_grad=True)
-            r_tensor = torch.bernoulli(r_tensor)  # random 0 or 1
-            d_tensor = torch.rand((1,), requires_grad=True)
-            d_tensor = torch.bernoulli(d_tensor)  # random 0 or 1
-            sample = (s_tensor, ns_tensor, a_tensor, r_tensor, d_tensor)
-            batch.append(sample)
+
 
         states, new_states, actions, rewards, dones = zip(*batch)
 
+        begin_time=time.perf_counter()
         states_tensor = torch.cat(states, dim=0).to(device)
         new_states_tensor = torch.cat(new_states, dim=0).to(device)
         actions_tensor = torch.cat(actions, dim=0).to(device)
@@ -87,8 +80,8 @@ class Trainer:
         self.dqn_optimizer.zero_grad()
         loss.backward()
         self.dqn_optimizer.step()
-
-        return loss.item()
+        end_time=time.perf_counter()
+        return end_time-begin_time, loss.item()
 
     def epsilon_by_frame(self, frame_id):
         epsilon = self.epsilon_final + (self.epsilon_start - self.epsilon_final) * math.exp(-1.0 * frame_id / self.epsilon_decay)
@@ -112,7 +105,8 @@ class Trainer:
         episode_reward = 0.0
         all_rewards = []
         # losses = []
-        start = time.time()
+        # start = time.time()
+        t_total=0
 
         for epoch in range(1, num_epochs + 1):
             epsilon = self.epsilon_by_frame(epoch)
@@ -148,14 +142,28 @@ class Trainer:
             # if epoch >= 8192: #start after filling replay. not necessary here.
                 # loss = self.compute_td_loss(self.batch_size, self.gamma)
                 # losses.append(loss)
-            loss = self.compute_td_loss(self.batch_size, self.gamma)
+            # simulate: sampling a bacth
+            batch = []
+            for _ in range(self.batch_size):
+                s_tensor = torch.rand((1, 4), requires_grad=True)
+                ns_tensor = torch.rand((1, 4), requires_grad=True)
+                a_tensor = torch.randint(0, num_actions, (1,), dtype=torch.long)
+                r_tensor = torch.rand((1,), requires_grad=True)
+                r_tensor = torch.bernoulli(r_tensor)  # random 0 or 1
+                d_tensor = torch.rand((1,), requires_grad=True)
+                d_tensor = torch.bernoulli(d_tensor)  # random 0 or 1
+                sample = (s_tensor, ns_tensor, a_tensor, r_tensor, d_tensor)
+                batch.append(sample)
+            t, loss = self.compute_td_loss(self.batch_size, self.gamma, batch)
+            t_total+=t
 
             if epoch % 1000 == 0:
                 print(episode_reward)
                 self.target_network.load_state_dict(self.network.state_dict())
 
-        stop = time.time()
-        print("Time taken by function:", stop - start, "seconds")
+        # stop = time.time()
+        print("Time taken by function:", t_total, "seconds")
+        print("Batch size =",self.batch_size,", Time per bacthed gradient update:", 1000*t_total/num_epochs, "ms")
 
 
 if __name__ == "__main__":
@@ -164,4 +172,4 @@ if __name__ == "__main__":
     num_actions = 2
     capacity = 8192
     trainer = Trainer(state_space, hidden_size, num_actions, capacity)
-    trainer.train(123, "/Users/cartpole.bin", 1000, num_actions)
+    trainer.train(123, "/Users/cartpole.bin", 100, num_actions)
