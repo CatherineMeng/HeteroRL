@@ -11,6 +11,9 @@ pip install gym
 pip install gym[atari,accept-rom-license]
 pip install opencv-python
 pip install matplotlib
+pip install tensorboard
+pip install swig
+pip install gym[box2d]
 ```
 ## CartPole, MLP, DQN
 ### run once
