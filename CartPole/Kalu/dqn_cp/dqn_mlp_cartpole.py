@@ -122,6 +122,7 @@ for i in range(cfg.max_episode):
   for t in count():
     # print(torch.tensor(state[0]))
     # action = get_action(torch.tensor(state).float()[None, :], epsilon)
+    # print(torch.tensor(state))
     action = get_action(torch.tensor(state).float(), epsilon)
     next_state, reward, done, _, _ = env.step(action)
 
