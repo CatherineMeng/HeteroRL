@@ -103,6 +103,57 @@ def update_network(states, actions, next_states, rewards, dones):
   return t2-t1
 
 
+def update_network_multistream(states, actions, next_states, rewards, dones):
+    t1 = time.perf_counter()
+    
+    batch_size = states.shape[0]
+    C = 2  # Number of CUDA streams
+    
+    streams = [torch.cuda.Stream() for _ in range(C)]
+    chunk_size = (batch_size + C - 1) // C
+    
+    state_action_values_list = []
+    next_state_values_list = []
+    expected_state_action_values_list = []
+    loss_list = []
+    
+    for i in range(0, batch_size, chunk_size):
+        end_idx = min(i + chunk_size, batch_size)
+        
+        with torch.cuda.stream(streams[i % C]):
+            chunk_states = states[i:end_idx]
+            chunk_actions = actions[i:end_idx]
+            chunk_next_states = next_states[i:end_idx]
+            chunk_rewards = rewards[i:end_idx]
+            chunk_dones = dones[i:end_idx]
+
+            state_action_values = policy_net(chunk_states).gather(1, chunk_actions[:, None].long()).squeeze()
+            next_state_values = torch.max(target_net(chunk_next_states), dim=1)[0].detach()
+            expected_state_action_values = chunk_rewards + next_state_values * (1 - chunk_dones) * cfg.gamma
+
+            loss = F.mse_loss(state_action_values, expected_state_action_values)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            state_action_values_list.append(state_action_values)
+            next_state_values_list.append(next_state_values)
+            expected_state_action_values_list.append(expected_state_action_values)
+            loss_list.append(loss)
+
+    torch.cuda.synchronize()
+    # print("here")
+    state_action_values = torch.cat(state_action_values_list)
+    next_state_values = torch.cat(next_state_values_list)
+    expected_state_action_values = torch.cat(expected_state_action_values_list)
+    loss = torch.stack(loss_list).mean()
+    
+    t2 = time.perf_counter()
+    
+    return t2 - t1
+
+
 policy_net = DQN().to(device)
 target_net = DQN().to(device)
 target_net.load_state_dict(policy_net.state_dict())
@@ -112,11 +163,13 @@ memory = Memory(10000)
 
 train_time_epsavg_total=0
 # for i in tqdm(range(cfg.max_episode)):
+t_start=time.perf_counter()
 for i in range(cfg.max_episode):
   episode_durations = 0
   state = env.reset()
   state=state[0]
   epsilon = (cfg.epsilon_end - cfg.epsilon_start) * (i / cfg.max_episode) + cfg.epsilon_start
+  # epsilon = 0.5
 
   train_time_total=0
   for t in count():
@@ -134,6 +187,9 @@ for i in range(cfg.max_episode):
         map(lambda x: torch.tensor(x).float(), zip(*memory.sample_batch(cfg.batch_size)))
 
       p_time=update_network(states.to(device), actions.to(device), next_states.to(device), rewards.to(device), dones.to(device))
+      # multistream tested, :D
+      # p_time=update_network_multistream(states.to(device), actions.to(device), next_states.to(device), rewards.to(device), dones.to(device))
+
       train_time_total+=p_time
 
     if done or t==200:
@@ -150,6 +206,8 @@ for i in range(cfg.max_episode):
     target_net.load_state_dict(policy_net.state_dict())
 
 draw_fig()
+
+print("total time for", cfg.max_episode,"training episodes:",time.perf_counter()-t_start,"seconds")
 print("train_time_epsavg_total:",train_time_epsavg_total)
 print("Batch",cfg.batch_size," - avg per-gradeint-update train time:",train_time_epsavg_total/cfg.max_episode)
 
