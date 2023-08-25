@@ -18,13 +18,18 @@ class Trainer{
 
     public:
         Trainer(int64_t input_channels, int64_t num_actions, int64_t capacity);
-        torch::Tensor compute_td_loss(int64_t batch_size, float gamma);
+        torch::Tensor compute_td_loss(int64_t batch_size, float gamma,
+                                    torch::Tensor states_tensor,
+                                    torch::Tensor new_states_tensor,
+                                    torch::Tensor actions_tensor,
+                                    torch::Tensor rewards_tensor,
+                                    torch::Tensor dones_tensor);
         void load_enviroment(int64_t random_seed, std::string rom_path);
         double epsilon_by_frame(int64_t frame_id);
         torch::Tensor get_tensor_observation(std::vector<unsigned char> state);
         void loadstatedict(torch::nn::Module& model,
                            torch::nn::Module& target_model);
-        void train(int64_t random_seed, std::string rom_path, int64_t num_epochs);
+        void trainloop(int64_t random_seed, std::string rom_path, int64_t num_epochs);
 
 };
 

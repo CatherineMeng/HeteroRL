@@ -13,61 +13,14 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
             // network.parameters(), torch::optim::AdamOptions(0.0001).beta1(0.5)){}
             network.parameters(), torch::optim::AdamOptions(0.0001)){}
 
-    torch::Tensor Trainer::compute_td_loss(int64_t batch_size, float gamma){
+    torch::Tensor Trainer::compute_td_loss(int64_t batch_size, float gamma,
+        torch::Tensor states_tensor,
+        torch::Tensor new_states_tensor,
+        torch::Tensor actions_tensor,
+        torch::Tensor rewards_tensor,
+        torch::Tensor dones_tensor){
         
-        // std::vector<std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>> batch =
-                // buffer.sample_queue(batch_size);  //vector of tensors, each tensor is 1-d
-        std::vector<std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>> batch(batch_size);
-        for (size_t i=0;i<batch_size;i++){
-            torch::Tensor s_tensor = torch::rand({1, 4},torch::requires_grad());
-            torch::Tensor ns_tensor = torch::rand({1, 4},torch::requires_grad());
-            torch::Tensor a_tensor = torch::rand({1},torch::requires_grad());
-            torch::Tensor r_tensor = torch::rand({1},torch::requires_grad());
-            r_tensor = torch::bernoulli(r_tensor); //random 0 or 1
-            torch::Tensor d_tensor = torch::rand({1},torch::requires_grad());
-            d_tensor = torch::bernoulli(d_tensor); //random 0 or 1
-            std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> sample (s_tensor, ns_tensor, a_tensor, r_tensor, d_tensor);
-            batch[i]=sample;
-        }
         
-        std::vector<torch::Tensor> states;
-        std::vector<torch::Tensor> new_states;
-        std::vector<torch::Tensor> actions;
-        std::vector<torch::Tensor> rewards;
-        std::vector<torch::Tensor> dones;
-
-        //replay sampling, first create vectors of tensors then concat in the batch dimension...
-        
-        for (auto i : batch){
-            states.push_back(std::get<0>(i));
-            new_states.push_back(std::get<1>(i));
-            actions.push_back(std::get<2>(i));
-            rewards.push_back(std::get<3>(i));
-            dones.push_back(std::get<4>(i));
-        }
-
-        torch::Tensor states_tensor;
-        torch::Tensor new_states_tensor;
-        torch::Tensor actions_tensor;
-        torch::Tensor rewards_tensor;
-        torch::Tensor dones_tensor;
-
-        states_tensor = torch::cat(states, 0);
-        new_states_tensor = torch::cat(new_states, 0);
-        actions_tensor = torch::cat(actions, 0);
-        rewards_tensor = torch::cat(rewards, 0);
-        dones_tensor = torch::cat(dones, 0);
-        
-
-        // random generate tensors for simulation
-        // torch::Tensor states_tensor = torch::rand({batch_size, 4});
-        // torch::Tensor new_states_tensor = torch::rand({batch_size, 4});
-        // torch::Tensor actions_tensor = torch::rand({batch_size, 2});
-        // torch::Tensor rewards_tensor = torch::rand({batch_size}); //{batch_size,1}
-        // torch::Tensor dones_tensor = torch::rand({batch_size});  //{batch_size,1}
-        // dones_tensor = torch::bernoulli(dones_tensor); //random 0 or 1
-
-
         torch::Tensor q_values = network.forward(states_tensor);
         torch::Tensor next_target_q_values = target_network.forward(new_states_tensor);
         torch::Tensor next_q_values = network.forward(new_states_tensor);
@@ -143,7 +96,7 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
         }
     }
 
-    void Trainer::train(int64_t random_seed, std::string rom_path, int64_t num_epochs){
+    void Trainer::trainloop(int64_t random_seed, std::string rom_path, int64_t num_epochs){
         // load_enviroment(random_seed, rom_path);
         // ActionVect legal_actions = ale.getLegalActionSet();
         // ale.reset_game();
@@ -190,7 +143,7 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
             //interface with replay later
             // buffer.push(state_tensor, new_state_tensor, action_tensor_new, done_tensor, reward_tensor);
             state_tensor = new_state_tensor;
-
+    
             if (done){
                 // ale.reset_game();
                 // std::vector<unsigned char> state;
@@ -202,9 +155,54 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
 
             // if (buffer.size_buffer() >= 10000){
             if (i >= 5000){
-                torch::Tensor loss = compute_td_loss(batch_size, gamma);
-                // losses.push_back(loss);
-                // std::cout<<"loss: "<<loss<<std::endl;
+
+                // Sample random data for now for testbench
+                // std::vector<std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>> batch =
+                        // buffer.sample_queue(batch_size);  //vector of tensors, each tensor is 1-d
+                std::vector<std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>> batch(batch_size);
+                for (size_t i=0;i<batch_size;i++){
+                    torch::Tensor s_tensor = torch::rand({1, 4},torch::requires_grad());
+                    torch::Tensor ns_tensor = torch::rand({1, 4},torch::requires_grad());
+                    torch::Tensor a_tensor = torch::rand({1},torch::requires_grad());
+                    torch::Tensor r_tensor = torch::rand({1},torch::requires_grad());
+                    r_tensor = torch::bernoulli(r_tensor); //random 0 or 1
+                    torch::Tensor d_tensor = torch::rand({1},torch::requires_grad());
+                    d_tensor = torch::bernoulli(d_tensor); //random 0 or 1
+                    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> sample (s_tensor, ns_tensor, a_tensor, r_tensor, d_tensor);
+                    batch[i]=sample;
+                }
+                
+                std::vector<torch::Tensor> states;
+                std::vector<torch::Tensor> new_states;
+                std::vector<torch::Tensor> actions;
+                std::vector<torch::Tensor> rewards;
+                std::vector<torch::Tensor> dones;
+
+                //replay sampling, first create vectors of tensors then concat in the batch dimension...
+                
+                for (auto i : batch){
+                    states.push_back(std::get<0>(i));
+                    new_states.push_back(std::get<1>(i));
+                    actions.push_back(std::get<2>(i));
+                    rewards.push_back(std::get<3>(i));
+                    dones.push_back(std::get<4>(i));
+                }
+
+                torch::Tensor states_tensor;
+                torch::Tensor new_states_tensor;
+                torch::Tensor actions_tensor;
+                torch::Tensor rewards_tensor;
+                torch::Tensor dones_tensor;
+
+                states_tensor = torch::cat(states, 0);
+                new_states_tensor = torch::cat(new_states, 0);
+                actions_tensor = torch::cat(actions, 0);
+                rewards_tensor = torch::cat(rewards, 0);
+                dones_tensor = torch::cat(dones, 0);
+            
+                torch::Tensor loss = compute_td_loss(batch_size, gamma,
+                states_tensor,new_states_tensor,actions_tensor,rewards_tensor,dones_tensor);
+
             }
 
             if (i%1000==0){
