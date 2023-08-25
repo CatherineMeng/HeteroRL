@@ -37,11 +37,6 @@ parser.add_argument('--max_episode', type=int, default=10)
 
 cfg = parser.parse_args()
 
-last_score_plot = [0]*cfg.max_episode
-avg_score_plot = [0]*cfg.max_episode
-
-
-env = gym.make('CartPole-v0')
 
 
 class Memory(object):
@@ -196,8 +191,6 @@ if __name__ == "__main__":
 
       if done or t==200:
         episode_durations = t + 1
-        avg_score_plot[i]=(avg_score_plot[i-1] * 0.99 + episode_durations * 0.01)
-        last_score_plot[i]=(episode_durations)
         train_time_epsavg_total+=1000*train_time_total/episode_durations #in ms
       #   print("Episode",i,"- Avg gradient update time of batch",cfg.batch_size,"is",1000*train_time_total/episode_durations,"ms")
         break
@@ -213,4 +206,4 @@ if __name__ == "__main__":
 
 
   print('Complete')
-  env.close()
+
