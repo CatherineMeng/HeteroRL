@@ -83,3 +83,9 @@ Run random simulation test (DevCloud):
 ```
 ./learner
 ```
+
+## Learner - Python
+```
+python mlp_dqn.py
+python mlp_ddpg.py
+```
