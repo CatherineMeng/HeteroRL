@@ -16,12 +16,12 @@ import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 
-# if torch.cuda.is_available():
-#     device = torch.device("cuda")  # Use GPU if available
-#     print("USING GPU")
+if torch.cuda.is_available():
+    device = torch.device("cuda")  # Use GPU if available
+    print("USING GPU")
 
-device = torch.device("cpu")
-torch.set_num_threads(1)
+# device = torch.device("cpu")
+# torch.set_num_threads(1)
 
 def draw_fig():
   plt.title('reward')

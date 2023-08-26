@@ -1,6 +1,6 @@
 
-# Test: Cartpole, DQN, MLP
-### Train function corretly tested in gym env
+# Test: 2 algorithms, 2 models - 4 benchmarks
+Train function & reward plots corretly tested in gym env
 
 ## Creating conda env for Atari game tests
 ```
@@ -19,6 +19,7 @@ pip install gym[box2d]
 ### run once
 ```
 conda activate htroRLatari
+cd dqn_cp
 python dqn_mlp_cartpole.py
 nohup python dqn_mlp_cartpole.py > mylog.txt & disown
 ```
@@ -28,8 +29,13 @@ chmod +x run_batches.sh
 ./run_batches.sh
 ```
 
-## CartPole, MLP, DQN
-
+## Pong, CNN, DQN
+```
+conda activate htroRLatari
+cd dqn_pong
+python dqn_pong.py
+nohup python dqn_pong.py > mylog.txt & disown
+```
 ## Pong, CNN, DQN
 
 ## Pong, CNN, DDPG
