@@ -36,16 +36,20 @@ cd dqn_pong
 python dqn_pong.py
 nohup python dqn_pong.py > mylog.txt & disown
 ```
-## Pong, CNN, DQN
 
-## Pong, CNN, DDPG
-### run once
+## LunarLander, MLP, DDPG
 ```
 conda activate htroRLatari
-cd ddpg_pong
-nohup python ddpg_pong.py > mylog.txt & disown
-```
-### run for different batch sizes and collect outputs
+cd ddpg_lunarlander
+python ddpg_ll.py
+nohup python ddpg_ll.py > mylog.txt & disown
 ```
 
+## MountCar, MLP, DDPG
+
+```
+conda activate htroRLatari
+cd ddpg_mountcar
+python ddpg_mountcar.py
+nohup python ddpg_mountcar.py > mylog.txt & disown
 ```
