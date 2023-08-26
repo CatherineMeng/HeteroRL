@@ -1,1 +1,0 @@
-/glob/development-tools/versions/oneapi/2023.0.1/oneapi/compiler/2023.0.0/linux/bin/icpx    -fsycl -fintelfpga -Xshardware -Xstarget=intel_a10gx_pac:pac_a10  -fsycl-link=early CMakeFiles/CartPole_report.a.dir/CartPole.cpp.o  -o ../CartPole_report.a 
