@@ -302,3 +302,133 @@ class PrioritizedReplayMemory_n:
             assert(tree_index < self.tree.full_tree_size)
             priority = self._get_priority(td_error)
             self.tree.update(tree_index, priority)
+
+
+def cliprg(x,lo,hi):
+    if (x<lo):
+        return lo
+    elif (x>=hi):
+        return hi-1
+    else:
+        return x
+# n-ary sum tree - sycl FPGA pybinded module
+class SumTreenary_fpga:
+    def __init__(self, capacity, fanout):
+        self.capacity = capacity
+        self.fanout = fanout
+        # assume capacity is a power of fanout!
+        i=0
+        full_tree_size=0
+        while (fanout**i<=capacity):
+            full_tree_size+=fanout**i
+            i+=1
+        self.full_tree_size=full_tree_size
+        # self.full_tree_size - self.capacity = capacity is the total number of non-leaf nodes
+        assert(self.capacity==fanout**(i-1))
+        self.num_non_leaf=full_tree_size-capacity
+        self.D = 4 #depth
+        self.tree = PER()
+        self.root_pr=0
+        # replay_manager.Test(root_pr)
+        self.tree.Init(self.root_pr)
+        self.data_pointer = 0
+
+    def add(self, priorities, BS):
+        assert(len(priorities)==BS)
+        inds = [self.data_pointer+i for i in range(BS)]
+        self.update(inds, priorities, BS)
+        self.data_pointer = (self.data_pointer + BS) % self.capacity
+
+    def update(self, inds, priorities, BS):
+        assert(len(priorities)==BS)
+        in_list = [sibit_io()]*BS
+        for ii in range(BS):
+            in_list[ii].sampling_flag=0
+            in_list[ii].update_flag=0
+            in_list[ii].get_priority_flag=1
+            in_list[ii].init_flag=0
+            in_list[ii].pr_idx=inds[ii]
+            self.root_pr += priorities[ii]
+        # print("=== Running the get-priority kernel ===")
+        MultiKernel_out = self.tree.DoWorkMultiKernel(in_list, [0]*BS, [0.0]*BS, [0.0]*BS, \
+        self.root_pr, BS, 1)
+        delts = [priorities[i] - MultiKernel_out.out_pr_insertion[i] for i in range(BS)]
+
+        for ii in range(BS):
+            in_list[ii].sampling_flag=0
+            in_list[ii].update_flag=1
+            in_list[ii].get_priority_flag=0
+            in_list[ii].init_flag=0
+            in_list[ii].update_index_array[0]=0
+            in_list[ii].update_index_array[1]=(ii/self.fanout)/self.fanout
+            in_list[ii].update_index_array[2]=ii/self.fanout
+            in_list[ii].update_index_array[3]=ii
+            for iii in range(self.D):
+                in_list[ii].update_offset_array[iii]=delts[ii]
+                # in_list[ii].set_upd_offset_index(iii,0.1)
+        # print("=== Running the update kernel ===")
+        MultiKernel_out = self.tree.DoWorkMultiKernel(in_list, [0]*BS, [0.0]*BS, [0.0]*BS,\
+        self.root_pr, BS, 1)
+   
+    # used for sampling
+    def get_leaf(self, vs, BS):
+        assert(len(vs)==BS)
+        in_list = [sibit_io()]*BS
+        for ii in range(BS):
+            in_list[ii].sampling_flag=1
+            in_list[ii].update_flag=0
+            in_list[ii].get_priority_flag=0
+            in_list[ii].init_flag=0
+            in_list[ii].start=0
+            in_list[ii].newx=vs[ii]
+        # print("=== Running the Sampling kernel ===")
+        MultiKernel_out = self.tree.DoWorkMultiKernel(in_list, [0]*BS, [0.0]*BS, [0.0]*BS, \
+        self.root_pr, BS, 1)
+        return MultiKernel_out.sampled_idx, MultiKernel_out.out_pr_sampled
+        
+    def total_priority(self):
+        return self.root_pr
+
+
+# Prioritized Replay based on an FPGA-implemented n-ary sum-tree 
+class PrioritizedReplayMemory_n_fpga:
+    def __init__(self, capacity,fanout, alpha=0.6, beta=0.4, beta_increment_per_sampling=0.001):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.beta = beta
+        self.beta_increment_per_sampling = beta_increment_per_sampling
+        self.tree = SumTreenary_fpga(capacity,fanout)
+        # self.data = deque(maxlen=capacity)
+        self.data = {key: 0 for key in range(capacity)}
+        self.data_pointer = 0
+        self.epsilon = 0.01
+
+    # for inserting a new experience
+    def _get_priority(self, td_error):
+        return [(tde + self.epsilon) ** self.alpha for tde in td_error]
+
+    # changed to batched mode
+    def push(self, transitions, td_errors, insert_batchsize):
+        assert(len(transitions)==insert_batchsize)
+        assert(len(td_errors)==insert_batchsize)
+        prs = self._get_priority(td_errors)
+        self.tree.add(prs,insert_batchsize)
+        for i in range(self.data_pointer, self.data_pointer+insert_batchsize):
+            self.data[i] = transitions[i-self.data_pointer]
+            # print("pushing data into data storage index",i)
+        self.data_pointer = (self.data_pointer + insert_batchsize) % self.capacity
+        
+
+    def sample(self, batch_size):
+        segment = self.tree.total_priority() / batch_size
+        vs = [random.uniform(segment * i, segment * (i+1))*self.tree.total_priority() for i in range(batch_size)]
+        indices, priorities = self.tree.get_leaf(vs,batch_size) #indices returned are indices in the data storage dict.
+        indices_c = [cliprg(x,0,self.capacity) for x in indices]
+        batch = [self.data[indices_c[i]] for i in range(batch_size)]
+        return batch, indices
+
+    def update_priorities(self, tree_indices, td_errors):
+        assert(len(tree_indices)==len(td_errors))
+        self.tree.update(tree_indices,td_errors,len(tree_indices))
+
+
