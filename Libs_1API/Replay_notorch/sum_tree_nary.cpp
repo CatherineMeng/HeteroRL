@@ -1,7 +1,10 @@
 #include "sum_tree_nary.h"
 
+#include <chrono>
+#include <ctime> 
 
-
+const int sampling_bsize = 128;
+const int set_batchsize = 128;
 // template<typename T>
 // std::vector<T> convert_tensor_to_flat_vector(const torch::Tensor &tensor) {
 //     torch::Tensor t = torch::flatten(tensor.cpu());
@@ -68,15 +71,6 @@ int64_t  SumTreeNary::get_root() const {
     return 0;
 }
 
-// torch::Tensor  SumTreeNary::operator[](const torch::Tensor &idx) const {
-//     auto idx_vector = convert_tensor_to_flat_vector<int64_t>(idx);
-//     auto output = torch::zeros_like(idx, torch::TensorOptions().dtype(torch::kFloat32));
-//     for (int i = 0; i < (int) idx_vector.size(); ++i) {
-//         output.index_put_({i}, get_value(convert_to_node_idx(idx_vector.at(i))));
-//     }
-//     return (output);
-// }
-
 std::vector<float>  SumTreeNary::operator[](const std::vector<int64_t> &idx) const {
     std::vector<float> output(idx.size());
     for (int i = 0; i < (int) idx.size(); ++i) {
@@ -86,30 +80,6 @@ std::vector<float>  SumTreeNary::operator[](const std::vector<int64_t> &idx) con
 }
 
 // Insertion, Update
-// void  SumTreeNary::set(const torch::Tensor &idx, const torch::Tensor &value) {
-//     auto idx_vec = convert_tensor_to_flat_vector<int64_t>(idx);
-//     auto value_vec = convert_tensor_to_flat_vector<float>(value);
-//     // put all the values
-//     for (int i = 0; i < (int) idx_vec.size(); ++i) {
-//         // get data pos
-//         int64_t pos = idx_vec.operator[](i);
-//         // get node pos
-//         pos = convert_to_node_idx(pos);
-//         // set the value of the leaf node
-//         auto original_value = get_value(pos);
-//         auto new_value = value_vec.operator[](i);
-//         auto delta = new_value - original_value;
-//         // update the parent
-//         while (true) {
-//             set_value(pos, get_value(pos) + delta);
-//             if (pos == get_root()) {
-//                 break;
-//             }
-//             pos = get_parent(pos);
-//         }
-//     }
-// }
-
 void  SumTreeNary::set(const std::vector<int64_t> &idx, const std::vector<float> &value) { 
     //assumes input is already flat vactor
     // put all the values
@@ -170,35 +140,6 @@ float  SumTreeNary::reduce(int64_t end) const {
 }
 
 // Sampling. 
-// Inout: random generated value that is the target prefix-sum. 
-// Output: the index used to access the data storage - the sampled exp whose priority sums up to value according to the current priority distribution.
-// torch::Tensor  SumTreeNary::get_prefix_sum_idx(torch::Tensor value) const {
-//     auto value_vec = convert_tensor_to_flat_vector<float>(value);
-//     auto index = torch::ones_like(value, torch::TensorOptions().dtype(torch::kInt64));
-
-//     for (int i = 0; i < (int) value_vec.size(); i++) {
-//         int64_t idx = get_root();
-//         float current_val = value_vec[i];
-//         while (!is_leaf(idx)) {
-//             idx = get_left_child(idx);
-//             float partial_sum = 0.;
-//             for (int64_t j = 0; j < m_n; ++j) {
-//                 float after_sum = get_value(idx) + partial_sum;
-//                 if (after_sum >= current_val) {
-//                     break;
-//                 }
-//                 // get next sibling
-//                 partial_sum = after_sum;
-//                 idx += 1;
-//             }
-//             current_val -= partial_sum;
-//         }
-//         index.index_put_({i}, convert_to_data_idx(idx));
-//     }
-
-//     return index;
-// }
-
 std::vector<int64_t>  SumTreeNary::get_prefix_sum_idx(const std::vector<float> &value) const {
 
     std::vector<int64_t> index(value.size());
@@ -227,81 +168,9 @@ std::vector<int64_t>  SumTreeNary::get_prefix_sum_idx(const std::vector<float> &
 }
 
 
-
 //************************************
 // Sampling in SYCL on device
 //************************************
-// void SumTreeNary::get_prefix_sum_idx_sycl(queue &q, torch::Tensor value, IntVector &index_parallel) {
-//     auto value_vec = convert_tensor_to_flat_vector<float>(value);
-//     // Create the range object for the vectors managed by the buffer.
-//     range<1> num_items{value_vec.size()};
-
-//     // Create buffers that hold the data shared between the host and the devices.
-//     buffer a_buf(value_vec);
-//     buffer out_buf(index_parallel.data(), num_items);
-//     auto buf_m_bound = sycl::buffer{&m_bound, sycl::range{1}};
-//     auto buf_m_n = sycl::buffer{&m_n, sycl::range{1}};
-//     auto buf_log2_m_n = sycl::buffer{&log2_m_n, sycl::range{1}};
-//     auto buf_m_padding = sycl::buffer{&m_padding, sycl::range{1}};
-//     // moving complete tree between host and device only for sampling is time-consuming. optimize: manage the tree on device
-//     std::vector<float> m_values_vec(m_size);
-//     for (size_t i=0;i<m_size;i++){
-//         m_values_vec[i]=m_values[i];
-//     }
-//     buffer buf_m_values(m_values_vec); 
-//     // Submit a command group to the queue by a lambda function that contains the
-//     // data access permission and device computation (kernel).
-
-    
-//     q.submit([&](handler &h) {
-//         // Create an accessor for each buffer with access permission: read, write or
-//         // read/write. The accessor is a mean to access the memory in the buffer.
-//         accessor vvec(a_buf, h, read_only);
-//         // The sum_accessor is used to store (with write permission) the sum data.
-//         accessor out_index(out_buf, h, write_only, no_init);
-
-//         accessor acc_m_bound(buf_m_bound, h, read_only);
-//         accessor acc_m_n(buf_m_n, h, read_only);
-//         accessor acc_log2_m_n(buf_log2_m_n, h, read_only);
-//         accessor acc_m_padding(buf_m_padding, h, read_only);
-//         accessor acc_m_values(buf_m_values, h, read_only);
-
-//         // Use parallel_for to run batched sampling in parallel on device.
-//         // h.parallel_for(num_items, [=](auto i) {
-        
-//         h.parallel_for(num_items, [=](auto i) {
-//             int64_t idx = 0;
-            
-//             float current_val = vvec[i];
-//             while (idx<acc_m_bound[0]) { //!is_leaf(idx)
-//                 idx = (idx << acc_log2_m_n[0]) + 1; //get_left_child(idx);
-//                 float partial_sum = 0.;
-//                 for (int64_t j = 0; j < acc_m_n[0]; ++j) {
-//                     // float after_sum = get_value(idx) + partial_sum;
-//                     idx = idx + acc_m_padding[0]; //get_node_idx_after_padding(idx); for get_value(idx)
-//                     float after_sum = acc_m_values[idx] + partial_sum; //get_value(idx)
-                    
-//                     if (after_sum >= current_val) {
-//                         break;
-//                     }
-//                     // get next sibling
-//                     partial_sum = after_sum;
-//                     idx += 1;
-//                 }
-//                 current_val -= partial_sum;
-//             }
-            
-//             out_index[i]= idx-acc_m_bound[0]; //convert_to_data_idx(idx);
-//             // index.index_put_({i}, convert_to_data_idx(idx));
-    
-//         });
-        
-//     });
-
-//     // Wait until compute tasks on GPU done
-//     q.wait();
-    
-// }
 void SumTreeNary::get_prefix_sum_idx_sycl(queue &q, std::vector<float> value, IntVector &index_parallel) {
     // Create the range object for the vectors managed by the buffer.
     range<1> num_items{value.size()};
@@ -395,33 +264,25 @@ void  SumTreeNary::initialize() {
 //    spdlog::info("SumTreeNary, n = {0}, size = {1}, m_bound = {2}", m_n, m_size, m_bound);
 }
 
-/*
-int main(){
-    SumTreeNary PTree(1024, 16);
-    // Test: insert (update) prorities for the first 512=128*4 leaf nodes
-    for (int i=0;i<128;i++){
-        PTree.set(torch::tensor({i*4,i*4+1,i*4+2,i*4+3}),
-        torch::tensor({0.1*i*4,0.1*(i*4+1),0.1*(i*4+2),0.1*(i*4+3)}));
-    }
-    // Test: sampling priorities
-
-    auto sampled = PTree.get_prefix_sum_idx(torch::rand(4));
-    std::cout << sampled << std::endl; 
-
-}
-*/
 int main() {
     default_selector d_selector;
     SumTreeNary PTree(1024, 16); //size, fanout
+    
     // Test: insert (update) prorities for the first 512=128*4 leaf nodes (no sycl)
-    for (int i=0;i<128;i++){
-        std::vector<int64_t> idx_vect{(int64_t)i*4,(int64_t)i*4+1,(int64_t)i*4+2,(int64_t)i*4+3};
-        std::vector<float> val_vect{(float)0.1*i*4,(float)0.1*(i*4+1),(float)0.1*(i*4+2),(float)0.1*(i*4+3)};
-        // PTree.set(torch::tensor({i*4,i*4+1,i*4+2,i*4+3}), //data storage indices
-        // torch::tensor({0.1*i*4,0.1*(i*4+1),0.1*(i*4+2),0.1*(i*4+3)})); //synthetic priority values
-        PTree.set(idx_vect, //data storage indices
-        val_vect); //synthetic priority values
+    std::vector<int64_t> idx_vect(set_batchsize);
+    std::vector<float> val_vect(set_batchsize);
+    for (int i=0;i<set_batchsize;i++){
+        idx_vect[i]=i;
+        val_vect[i]=0.1*(i*4+i%4);
     }
+    auto start = std::chrono::system_clock::now();
+    PTree.set(idx_vect, //data storage indices
+        val_vect); //synthetic priority values
+    auto end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Updating with batch size " <<set_batchsize << " finished computation with " 
+              << "elapsed time: " << elapsed_seconds.count()*1000 << "ms"
+              << std::endl;
     // Test: sampling priorities (yes sycl parallelized, vector size of 8)
     try {
     queue q(d_selector, exception_handler);
@@ -429,21 +290,31 @@ int main() {
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
                 << q.get_device().get_info<info::device::name>() << "\n";
+    
     // Sampling in dpc++
-    IntVector sampled_ind(8); //this output vector size needs to be consistent with the value tensor size passed into prefix_sum function
-    std::vector<float> sampling_values(8);
+    
+    std::vector<float> sampling_values(sampling_bsize);
     // float r2 = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/X)); //generate a random float from 0 to X
-    for (size_t i=0;i<8;i++){
+    for (size_t i=0;i<sampling_bsize;i++){
         // float r = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/5));
         sampling_values[i] = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/65));
     }
-    std::cout << "Created emulated sampling values: "<<sampling_values[0]<<sampling_values[7]<< "\n";
+    std::cout << "Created emulated sampling values: ";
+    // <<sampling_values[0]<<sampling_values[7]<< "\n";
+    start = std::chrono::system_clock::now();
+    IntVector sampled_ind(sampling_bsize); //this output vector size needs to be consistent with the value tensor size passed into prefix_sum function
     PTree.get_prefix_sum_idx_sycl(q, sampling_values, sampled_ind);
+    // std::vector<int64_t> sampled_ind = PTree.get_prefix_sum_idx(sampling_values);
+    end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Sampling with batch size " <<sampling_bsize << " finished computation with " 
+              << "elapsed time: " << elapsed_seconds.count()*1000 << "ms"
+              << std::endl;
     // BasicPolicy(q, state_vec, param_vec, a);
-    std::cout << "sampled indices: " << sampled_ind[0] <<" "
-    <<sampled_ind[1]<< " "<< sampled_ind[2] <<" "<< sampled_ind[3] <<" "
-    << sampled_ind[4] <<" "<< sampled_ind[5] <<" "
-    << sampled_ind[6] <<" "<< sampled_ind[7] <<" "<< "\n";
+    // std::cout << "sampled indices: " << sampled_ind[0] <<" "
+    // <<sampled_ind[1]<< " "<< sampled_ind[2] <<" "<< sampled_ind[3] <<" "
+    // << sampled_ind[4] <<" "<< sampled_ind[5] <<" "
+    // << sampled_ind[6] <<" "<< sampled_ind[7] <<" "<< "\n";
     } catch (exception const &e) {
     std::cout << "An exception is caught for Basic Policy.\n";
     std::terminate();
