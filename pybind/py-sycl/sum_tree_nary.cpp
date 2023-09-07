@@ -1,6 +1,7 @@
 #include "sum_tree_nary.h"
 
-
+#include <chrono>
+#include <ctime> 
 
 // template<typename T>
 // std::vector<T> convert_tensor_to_flat_vector(const torch::Tensor &tensor) {
@@ -175,35 +176,6 @@ float  SumTreeNary::reduce(int64_t end) const {
 }
 
 // Sampling. 
-// Inout: random generated value that is the target prefix-sum. 
-// Output: the index used to access the data storage - the sampled exp whose priority sums up to value according to the current priority distribution.
-// torch::Tensor  SumTreeNary::get_prefix_sum_idx(torch::Tensor value) const {
-//     auto value_vec = convert_tensor_to_flat_vector<float>(value);
-//     auto index = torch::ones_like(value, torch::TensorOptions().dtype(torch::kInt64));
-
-//     for (int i = 0; i < (int) value_vec.size(); i++) {
-//         int64_t idx = get_root();
-//         float current_val = value_vec[i];
-//         while (!is_leaf(idx)) {
-//             idx = get_left_child(idx);
-//             float partial_sum = 0.;
-//             for (int64_t j = 0; j < m_n; ++j) {
-//                 float after_sum = get_value(idx) + partial_sum;
-//                 if (after_sum >= current_val) {
-//                     break;
-//                 }
-//                 // get next sibling
-//                 partial_sum = after_sum;
-//                 idx += 1;
-//             }
-//             current_val -= partial_sum;
-//         }
-//         index.index_put_({i}, convert_to_data_idx(idx));
-//     }
-
-//     return index;
-// }
-
 std::vector<int64_t>  SumTreeNary::get_prefix_sum_idx(const std::vector<float> &value) const {
 
     std::vector<int64_t> index(value.size());
@@ -236,77 +208,7 @@ std::vector<int64_t>  SumTreeNary::get_prefix_sum_idx(const std::vector<float> &
 //************************************
 // Sampling in SYCL on device
 //************************************
-// void SumTreeNary::get_prefix_sum_idx_sycl(queue &q, torch::Tensor value, IntVector &index_parallel) {
-//     auto value_vec = convert_tensor_to_flat_vector<float>(value);
-//     // Create the range object for the vectors managed by the buffer.
-//     range<1> num_items{value_vec.size()};
 
-//     // Create buffers that hold the data shared between the host and the devices.
-//     buffer a_buf(value_vec);
-//     buffer out_buf(index_parallel.data(), num_items);
-//     auto buf_m_bound = sycl::buffer{&m_bound, sycl::range{1}};
-//     auto buf_m_n = sycl::buffer{&m_n, sycl::range{1}};
-//     auto buf_log2_m_n = sycl::buffer{&log2_m_n, sycl::range{1}};
-//     auto buf_m_padding = sycl::buffer{&m_padding, sycl::range{1}};
-//     // moving complete tree between host and device only for sampling is time-consuming. optimize: manage the tree on device
-//     std::vector<float> m_values_vec(m_size);
-//     for (size_t i=0;i<m_size;i++){
-//         m_values_vec[i]=m_values[i];
-//     }
-//     buffer buf_m_values(m_values_vec); 
-//     // Submit a command group to the queue by a lambda function that contains the
-//     // data access permission and device computation (kernel).
-
-    
-//     q.submit([&](handler &h) {
-//         // Create an accessor for each buffer with access permission: read, write or
-//         // read/write. The accessor is a mean to access the memory in the buffer.
-//         accessor vvec(a_buf, h, read_only);
-//         // The sum_accessor is used to store (with write permission) the sum data.
-//         accessor out_index(out_buf, h, write_only, no_init);
-
-//         accessor acc_m_bound(buf_m_bound, h, read_only);
-//         accessor acc_m_n(buf_m_n, h, read_only);
-//         accessor acc_log2_m_n(buf_log2_m_n, h, read_only);
-//         accessor acc_m_padding(buf_m_padding, h, read_only);
-//         accessor acc_m_values(buf_m_values, h, read_only);
-
-//         // Use parallel_for to run batched sampling in parallel on device.
-//         // h.parallel_for(num_items, [=](auto i) {
-        
-//         h.parallel_for(num_items, [=](auto i) {
-//             int64_t idx = 0;
-            
-//             float current_val = vvec[i];
-//             while (idx<acc_m_bound[0]) { //!is_leaf(idx)
-//                 idx = (idx << acc_log2_m_n[0]) + 1; //get_left_child(idx);
-//                 float partial_sum = 0.;
-//                 for (int64_t j = 0; j < acc_m_n[0]; ++j) {
-//                     // float after_sum = get_value(idx) + partial_sum;
-//                     idx = idx + acc_m_padding[0]; //get_node_idx_after_padding(idx); for get_value(idx)
-//                     float after_sum = acc_m_values[idx] + partial_sum; //get_value(idx)
-                    
-//                     if (after_sum >= current_val) {
-//                         break;
-//                     }
-//                     // get next sibling
-//                     partial_sum = after_sum;
-//                     idx += 1;
-//                 }
-//                 current_val -= partial_sum;
-//             }
-            
-//             out_index[i]= idx-acc_m_bound[0]; //convert_to_data_idx(idx);
-//             // index.index_put_({i}, convert_to_data_idx(idx));
-    
-//         });
-        
-//     });
-
-//     // Wait until compute tasks on GPU done
-//     q.wait();
-    
-// }
 IntVector SumTreeNary::get_prefix_sum_idx_sycl(std::vector<float> value) {
     // Create the range object for the vectors managed by the buffer.
     range<1> num_items{value.size()};
@@ -331,6 +233,7 @@ IntVector SumTreeNary::get_prefix_sum_idx_sycl(std::vector<float> value) {
     // data access permission and device computation (kernel).
     std::cout << "Created buffers "<< "\n";
     
+    auto start = std::chrono::system_clock::now();
     q.submit([&](handler &h) {
         // Create an accessor for each buffer with access permission: read, write or
         // read/write. The accessor is a mean to access the memory in the buffer.
@@ -368,16 +271,18 @@ IntVector SumTreeNary::get_prefix_sum_idx_sycl(std::vector<float> value) {
                 }
                 current_val -= partial_sum;
             }
-            
             out_index[i]= idx-acc_m_bound[0]; //convert_to_data_idx(idx);
             // index.index_put_({i}, convert_to_data_idx(idx));
-    
         });
-        
     });
 
     // Wait until compute tasks on GPU done
     q.wait();
+    auto end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Sampling with batch size " <<value.size() << " finished computation with " 
+              << "elapsed time: " << elapsed_seconds.count()*1000 << "ms"
+              << std::endl;
     return index_parallel;
     
 }
