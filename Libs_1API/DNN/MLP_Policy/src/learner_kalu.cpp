@@ -13,47 +13,89 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
             // network.parameters(), torch::optim::AdamOptions(0.0001).beta1(0.5)){}
             network.parameters(), torch::optim::AdamOptions(0.0001)){}
 
+    // torch::Tensor Trainer::compute_td_loss(int64_t batch_size, float gamma,
+    //     torch::Tensor states_tensor,
+    //     torch::Tensor new_states_tensor,
+    //     torch::Tensor actions_tensor,
+    //     torch::Tensor rewards_tensor,
+    //     torch::Tensor dones_tensor){
+        
+        
+    //     torch::Tensor q_values = network.forward(states_tensor);
+    //     torch::Tensor next_target_q_values = target_network.forward(new_states_tensor);
+    //     torch::Tensor next_q_values = network.forward(new_states_tensor);
+
+
+    //     actions_tensor = actions_tensor.to(torch::kInt64);
+
+    //     // std::cout << "actions_tensor.unsqueeze(1) dims: " <<  actions_tensor.unsqueeze(1).sizes()<< std::endl;
+    //     // std::cout << "q_values.gather(1, actions_tensor.unsqueeze(1)) dims: " <<  q_values.gather(1, actions_tensor.unsqueeze(1)).sizes()<< std::endl;
+        
+    //     torch::Tensor q_value = q_values.gather(1, actions_tensor.unsqueeze(1)).squeeze(1);
+    //     // torch::Tensor q_value = q_values.gather(1, actions_tensor).squeeze(1);
+    //     torch::Tensor maximum = std::get<1>(next_q_values.max(1));
+    //     torch::Tensor next_q_value = next_target_q_values.gather(1, maximum.unsqueeze(1)).squeeze(1);
+    //     torch::Tensor expected_q_value = rewards_tensor + gamma*next_q_value*(1-dones_tensor);
+    //     // torch::Tensor loss = torch::mse_loss(q_value, expected_q_value);
+    //     // std::cout << "q_value dims: " <<  q_value.sizes()<< std::endl;
+    //     // std::cout << "expected_q_value dims: " <<  actions_tensor.sizes()<< std::endl;
+    //     // q_value.requires_grad_(true);
+    //     // expected_q_value.requires_grad_(true);
+
+    //     torch::Tensor loss = torch::mse_loss(q_value, expected_q_value);
+    //     // loss.requires_grad_(true);
+    //     // torch::requires_grad()
+        
+
+    //     dqn_optimizer.zero_grad();
+    //     loss.backward();
+    //     dqn_optimizer.step();
+
+    //     return loss;
+
+    // }
+
     torch::Tensor Trainer::compute_td_loss(int64_t batch_size, float gamma,
         torch::Tensor states_tensor,
         torch::Tensor new_states_tensor,
         torch::Tensor actions_tensor,
         torch::Tensor rewards_tensor,
-        torch::Tensor dones_tensor){
-        
-        
+        torch::Tensor dones_tensor) {
+
+        // Check if GPU is available
+        bool use_cuda = torch::cuda::is_available();
+        if(use_cuda){
+            std::cout<<"Using GPU!\n";
+        }
+        torch::Device device = use_cuda ? torch::kCUDA : torch::kCPU;
+
+        // Move tensors to the GPU
+        states_tensor = states_tensor.to(device);
+        new_states_tensor = new_states_tensor.to(device);
+        actions_tensor = actions_tensor.to(device);
+        rewards_tensor = rewards_tensor.to(device);
+        dones_tensor = dones_tensor.to(device);
+
         torch::Tensor q_values = network.forward(states_tensor);
         torch::Tensor next_target_q_values = target_network.forward(new_states_tensor);
         torch::Tensor next_q_values = network.forward(new_states_tensor);
 
-
         actions_tensor = actions_tensor.to(torch::kInt64);
 
-        // std::cout << "actions_tensor.unsqueeze(1) dims: " <<  actions_tensor.unsqueeze(1).sizes()<< std::endl;
-        // std::cout << "q_values.gather(1, actions_tensor.unsqueeze(1)) dims: " <<  q_values.gather(1, actions_tensor.unsqueeze(1)).sizes()<< std::endl;
-        
         torch::Tensor q_value = q_values.gather(1, actions_tensor.unsqueeze(1)).squeeze(1);
-        // torch::Tensor q_value = q_values.gather(1, actions_tensor).squeeze(1);
         torch::Tensor maximum = std::get<1>(next_q_values.max(1));
         torch::Tensor next_q_value = next_target_q_values.gather(1, maximum.unsqueeze(1)).squeeze(1);
-        torch::Tensor expected_q_value = rewards_tensor + gamma*next_q_value*(1-dones_tensor);
-        // torch::Tensor loss = torch::mse_loss(q_value, expected_q_value);
-        // std::cout << "q_value dims: " <<  q_value.sizes()<< std::endl;
-        // std::cout << "expected_q_value dims: " <<  actions_tensor.sizes()<< std::endl;
-        // q_value.requires_grad_(true);
-        // expected_q_value.requires_grad_(true);
+        torch::Tensor expected_q_value = rewards_tensor + gamma * next_q_value * (1 - dones_tensor);
 
         torch::Tensor loss = torch::mse_loss(q_value, expected_q_value);
-        // loss.requires_grad_(true);
-        // torch::requires_grad()
-        
 
         dqn_optimizer.zero_grad();
         loss.backward();
         dqn_optimizer.step();
 
         return loss;
-
     }
+
 
     void Trainer::load_enviroment(int64_t random_seed, std::string rom_path){
         //NOT IMPLEMENTED: to be interfaced with env later
