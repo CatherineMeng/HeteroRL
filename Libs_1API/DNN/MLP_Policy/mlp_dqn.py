@@ -16,12 +16,14 @@ import matplotlib.pyplot as plt
 
 # from tqdm import tqdm
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")  # Use GPU if available
-    print("USING GPU")
+device = torch.device("cpu")
+
+# if torch.cuda.is_available():
+#     device = torch.device("cuda")  # Use GPU if available
+#     print("USING GPU")
 
 # device = torch.device("cpu")
-# torch.set_num_threads(1)
+torch.set_num_threads(16)
 
 
 
@@ -33,7 +35,7 @@ parser.add_argument('--epsilon_start', type=float, default=0.9)
 parser.add_argument('--epsilon_end', type=float, default=0.05)
 parser.add_argument('--target_update', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=512)
-parser.add_argument('--max_episode', type=int, default=10)
+parser.add_argument('--max_episode', type=int, default=100)
 
 cfg = parser.parse_args()
 
@@ -184,14 +186,14 @@ if __name__ == "__main__":
           map(lambda x: torch.tensor(x).float(), zip(*memory.sample_batch(cfg.batch_size)))
 
         p_time=trainer.update_network(states.to(device), actions.to(device), next_states.to(device), rewards.to(device), dones.to(device))
+        # print("p_time:",p_time*1000,"ms")
         # multistream tested, :D
         # p_time=update_network_multistream(states.to(device), actions.to(device), next_states.to(device), rewards.to(device), dones.to(device))
 
         train_time_total+=p_time
 
-      if done or t==200:
-        episode_durations = t + 1
-        train_time_epsavg_total+=1000*train_time_total/episode_durations #in ms
+      if t==100:
+        train_time_epsavg_total+=1000*train_time_total/t #in ms
       #   print("Episode",i,"- Avg gradient update time of batch",cfg.batch_size,"is",1000*train_time_total/episode_durations,"ms")
         break
 
@@ -201,8 +203,8 @@ if __name__ == "__main__":
 
 
   print("total time for", cfg.max_episode,"training episodes:",time.perf_counter()-t_start,"seconds")
-  print("train_time_epsavg_total:",train_time_epsavg_total)
-  print("Batch",cfg.batch_size," - avg per-gradeint-update train time:",train_time_epsavg_total/cfg.max_episode)
+  print("train_time_epsavg_total:",train_time_epsavg_total,"ms")
+  print("Batch",cfg.batch_size," - avg per-gradeint-update train time:",train_time_epsavg_total/cfg.max_episode,"ms")
 
 
   print('Complete')
