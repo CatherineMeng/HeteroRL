@@ -43,7 +43,7 @@ Run random simulation test (DevCloud):
 ./dqn
 ```
 
-## Learner:
+## Learner (DevCloud):
 
 Create CMakeLists.txt with the following content:
 
@@ -84,6 +84,42 @@ Run random simulation test (DevCloud):
 ./learner
 ```
 
+## Learner (Kalu):
+
+in /home/yuan/libtorch/share/cmake/Caffe2/public/cuda.cmake
+find the line 
+```
+  # Get cuDNN version
+  file(READ ${CUDNN_INCLUDE_DIR}/cudnn.h CUDNN_HEADER_CONTENTS)
+```
+change it to
+```
+  # Get cuDNN version
+  file(READ ${CUDNN_INCLUDE_DIR}/cudnn_version.h CUDNN_HEADER_CONTENTS)
+```
+
+Create CMakeLists.txt with the following content:
+```
+cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
+project(learner)
+
+find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
+add_executable(learner src/learner_kalu.cpp)
+target_link_libraries(learner "${TORCH_LIBRARIES}")
+set_property(TARGET learner PROPERTY CXX_STANDARD 17)
+
+set(CUDNN_INCLUDE_DIR /usr/local/cuda/include)
+set(CUDNN_LIBRARY /usr/local/cuda/lib64/libcudnn.so.8.9.4)
+set(CUDNN_LIBRARY_PATH /usr/local/cuda/lib64)
+```
+
+build:
+```
+cmake -DCMAKE_PREFIX_PATH=/home/yuan/libtorch ..
+cmake --build . --config Release
+```
 ## Learner - Python
 ```
 python mlp_dqn.py
