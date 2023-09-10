@@ -5,13 +5,22 @@
 typedef std::vector<int> IntVector; 
 typedef std::vector<float> FloatVector; 
 
+// Check if GPU is available
+bool use_cuda = torch::cuda::is_available();
+// bool use_cuda = false;
+torch::Device device = use_cuda ? torch::kCUDA : torch::kCPU;
+
+// torch::Device device =torch::kCPU;
 Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
         // buffer(capacity), //used for replay, integrate later
         network(state_dim, num_actions),
         target_network(state_dim, num_actions),
         dqn_optimizer(
             // network.parameters(), torch::optim::AdamOptions(0.0001).beta1(0.5)){}
-            network.parameters(), torch::optim::AdamOptions(0.0001)){}
+            network.parameters(), torch::optim::AdamOptions(0.0001)){
+                network.to(device);
+                target_network.to(device);
+            }
 
     // torch::Tensor Trainer::compute_td_loss(int64_t batch_size, float gamma,
     //     torch::Tensor states_tensor,
@@ -62,12 +71,7 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
         torch::Tensor rewards_tensor,
         torch::Tensor dones_tensor) {
 
-        // Check if GPU is available
-        bool use_cuda = torch::cuda::is_available();
-        if(use_cuda){
-            std::cout<<"Using GPU!\n";
-        }
-        torch::Device device = use_cuda ? torch::kCUDA : torch::kCPU;
+        std::cout.setf(std::ios::unitbuf);
 
         // Move tensors to the GPU
         states_tensor = states_tensor.to(device);
@@ -76,9 +80,13 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
         rewards_tensor = rewards_tensor.to(device);
         dones_tensor = dones_tensor.to(device);
 
-        torch::Tensor q_values = network.forward(states_tensor);
+        // std::cout<<"here0\n";
+        
+        torch::Tensor q_values = network.forward(states_tensor).to(device);
         torch::Tensor next_target_q_values = target_network.forward(new_states_tensor);
         torch::Tensor next_q_values = network.forward(new_states_tensor);
+
+        
 
         actions_tensor = actions_tensor.to(torch::kInt64);
 
@@ -89,7 +97,9 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
 
         torch::Tensor loss = torch::mse_loss(q_value, expected_q_value);
 
+        
         dqn_optimizer.zero_grad();
+        
         loss.backward();
         dqn_optimizer.step();
 
@@ -157,26 +167,28 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
             auto r = ((double) rand() / (RAND_MAX));
             // torch::Tensor state_tensor = get_tensor_observation(state);
             torch::Tensor state_tensor = torch::rand({1, 4});
+            state_tensor.to(device);
+            // std::cout<<"state_tensor.to(device)\n";
             int a;
             if (r <= epsilon){
                 // a = legal_actions[rand() % legal_actions.size()];
                 a=rand()%2; //randonly generate 0 or 1 for cartpole actions. interface with env according to avail actions later
             }
             else{
-                torch::Tensor action_tensor = network.act(state_tensor);
-                std::vector<int> legal_actions{ 0,1 };
-                int64_t index = action_tensor[0].item<int64_t>(); 
-                a = legal_actions[index]; //interface with env according to avail actions later
+                a=rand()%2; //randonly generate 0 or 1 for cartpole actions. interface with env according to avail actions later
+                // torch::Tensor action_tensor = network.act(state_tensor.to(device)).to(device);
+                // std::cout<<"action_tensor = network.act(state_tensor)\n";
+                // std::vector<int> legal_actions{ 0,1 };
+                // int64_t index = action_tensor[0].item<int64_t>(); 
+                // a = legal_actions[index]; //interface with env according to avail actions later
 
             }
 
             // float reward = ale.act(a);
             float reward = (float) rand(); //interface with env according to avail actions later
             episode_reward += reward;
-            // std::vector<unsigned char> new_state;
-            // ale.getScreenRGB(new_state);
-            // torch::Tensor new_state_tensor = get_tensor_observation(new_state);
-            torch::Tensor new_state_tensor = torch::rand({1, 4}); //interface with env according to avail actions later
+
+            torch::Tensor new_state_tensor = torch::rand({1, 4}).to(device); //interface with env according to avail actions later
             // bool done = ale.game_over();
             bool done =rand()%2; //interface with env according to avail actions later
 
@@ -202,8 +214,8 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
             if (i >= 5000){
 
                 // Suppose sampled random data for now for testbench
-                torch::Tensor states_tensor = torch::rand({batch_size, 4},torch::requires_grad());
-                torch::Tensor new_states_tensor = torch::rand({batch_size, 4},torch::requires_grad());
+                torch::Tensor states_tensor = torch::rand({batch_size,4},torch::requires_grad());
+                torch::Tensor new_states_tensor = torch::rand({batch_size,4},torch::requires_grad());
                 torch::Tensor actions_tensor = torch::rand({batch_size},torch::requires_grad());
                 torch::Tensor rewards_tensor = torch::rand({batch_size},torch::requires_grad());
                 rewards_tensor = torch::bernoulli(rewards_tensor); //random 0 or 1
@@ -240,6 +252,9 @@ Trainer::Trainer(int64_t state_dim, int64_t num_actions, int64_t capacity):
 
 
 int main() {
+    if(use_cuda){
+        std::cout<<"Using GPU!\n";
+    }
     Trainer trainer(4, 2, 100000); 
     trainer.trainloop(123, "/Users/cartpole.bin", 10000);
 }

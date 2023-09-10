@@ -119,7 +119,14 @@ build:
 ```
 cmake -DCMAKE_PREFIX_PATH=/home/yuan/libtorch ..
 cmake --build . --config Release
+or
+make
 ```
+Run random simulation test (Kalu):
+```
+./learner
+```
+
 ## Learner - Python
 ```
 python mlp_dqn.py

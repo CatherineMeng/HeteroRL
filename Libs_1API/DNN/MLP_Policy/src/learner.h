@@ -5,6 +5,9 @@
 
 #include "dqn.h"
 
+// torch::set_num_threads(1);
+// torch::set_num_interop_threads(1);
+
 class Trainer{
 
     // private: ExperienceReplay buffer;
@@ -13,7 +16,7 @@ class Trainer{
     private: double epsilon_start = 1.0;
     private: double epsilon_final = 0.01;
     private: int64_t epsilon_decay = 30000;
-    private: int64_t batch_size = 32;
+    private: int64_t batch_size = 8;
     private: float gamma = 0.99;
 
     public:
