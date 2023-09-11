@@ -6,12 +6,15 @@ import math
 import random
 import time
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")  # Use GPU if available
-    print("USING GPU")
-else:
-    device = torch.device("cpu")
+device = torch.device("cpu")
+torch.set_num_threads(16)
+# if torch.cuda.is_available():
+#     device = torch.device("cuda")  # Use GPU if available
+#     print("USING GPU")
+#     torch.set_num_threads(1)
 
+    
+# device = torch.device("cpu")
 class DQN(nn.Module):
     def __init__(self, input_channels, num_actions):
         super(DQN, self).__init__()
@@ -47,7 +50,7 @@ class Trainer:
         self.epsilon_start = 1.0
         self.epsilon_final = 0.01
         self.epsilon_decay = 30000
-        self.batch_size = 128
+        self.batch_size = 512
         self.gamma = 0.99
         self.num_actions=num_actions
         # self.buffer = ExperienceReplay(capacity)  # Uncomment and implement the ExperienceReplay class.
@@ -57,29 +60,19 @@ class Trainer:
         # Replace it with actual buffer implementation later if needed.
 
         # (Assuming batch is obtained from the buffer as commented out in the code)
-        # batch = self.buffer.sample_queue(batch_size)
+        states_tensor = torch.rand((batch_size, 3, 210, 160), requires_grad=True).to(device)
+        new_states_tensor = torch.rand((batch_size, 3, 210, 160), requires_grad=True).to(device)
+        actions_tensor = torch.rand((batch_size), requires_grad=True).to(device)
+        rewards_tensor = torch.rand((batch_size), requires_grad=True).to(device)
+        dones_tensor = torch.rand((batch_size), requires_grad=True).to(device)
 
-        # Instead of loading samples from the buffer, let's create random tensors for demonstration
-        batch = []
-        for _ in range(batch_size):
-            s_tensor = torch.rand((1, 3, 210, 160), requires_grad=True).to(device)
-            ns_tensor = torch.rand((1, 3, 210, 160), requires_grad=True).to(device)
-            a_tensor = torch.randint(0, self.num_actions, (1,), dtype=torch.long).to(device)
-            r_tensor = torch.rand((1,), requires_grad=True).to(device)
-            r_tensor = torch.bernoulli(r_tensor)  # random 0 or 1
-            d_tensor = torch.rand((1,), requires_grad=True).to(device)
-            d_tensor = torch.bernoulli(d_tensor)  # random 0 or 1
-            sample = (s_tensor, ns_tensor, a_tensor, r_tensor, d_tensor)
-            batch.append(sample)
+        # print("states_tensor.shape:",states_tensor.shape)
+        # print("new_states_tensor.shape:",new_states_tensor.shape)
+        # print("actions_tensor.shape:",actions_tensor.shape)
+        # print("rewards_tensor.shape:",rewards_tensor.shape)
+        # print("dones_tensor.shape:",dones_tensor.shape)
 
-        states, new_states, actions, rewards, dones = zip(*batch)
-
-        states_tensor = torch.cat(states, dim=0)
-        new_states_tensor = torch.cat(new_states, dim=0)
-        actions_tensor = torch.cat(actions, dim=0)
-        rewards_tensor = torch.cat(rewards, dim=0)
-        dones_tensor = torch.cat(dones, dim=0)
-
+        t1=time.perf_counter()
         q_values = self.network.forward(states_tensor)
         next_target_q_values = self.target_network.forward(new_states_tensor)
         next_q_values = self.network.forward(new_states_tensor)
@@ -97,7 +90,9 @@ class Trainer:
         loss.backward()
         self.dqn_optimizer.step()
 
-        return loss.item()
+        t2=time.perf_counter()
+
+        return t2-t1, loss.item()
 
     def epsilon_by_frame(self, frame_id):
         epsilon = self.epsilon_final + (self.epsilon_start - self.epsilon_final) * math.exp(-1.0 * frame_id / self.epsilon_decay)
@@ -123,6 +118,7 @@ class Trainer:
         # losses = []
         start = time.time()
 
+        sum_time=0
         for epoch in range(1, num_epochs + 1):
             epsilon = self.epsilon_by_frame(epoch)
             if random.random() <= epsilon:
@@ -151,18 +147,23 @@ class Trainer:
 
             if done:
                 state_tensor = torch.rand((1, 3, 210, 160)).to(device)  # Renew state if done.
-                all_rewards.append(episode_reward)
+                # all_rewards.append(episode_reward)
                 episode_reward = 0.0
 
             # if epoch >= 8192: #start after filling replay. not necessary here.
                 # loss = self.compute_td_loss(self.batch_size, self.gamma)
                 # losses.append(loss)
-            loss = self.compute_td_loss(self.batch_size, self.gamma)
+            ptime, loss = self.compute_td_loss(self.batch_size, self.gamma)
+            if (epoch!=1):
+                sum_time +=ptime
 
-            if epoch % 1000 == 0:
-                print(episode_reward)
+            print("per-gradient-step with batch",self.batch_size,":",ptime*1000,"ms")
+
+            if epoch % 10 == 0:
+                # print(episode_reward)
                 self.target_network.load_state_dict(self.network.state_dict())
 
+        print("avg time with batch",self.batch_size,":",sum_time*1000/(num_epochs-1),"ms")
         stop = time.time()
         print("Time taken by function:", stop - start, "seconds")
 
@@ -172,4 +173,4 @@ if __name__ == "__main__":
     num_actions = 18
     capacity = 8192
     trainer = Trainer(input_channels, num_actions, capacity)
-    trainer.train(123, "/Users/cartpole.bin", 100, num_actions)
+    trainer.train(123, "/Users/b.bin", 10, num_actions)

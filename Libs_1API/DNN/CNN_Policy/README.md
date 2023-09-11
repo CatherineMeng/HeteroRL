@@ -1,4 +1,5 @@
 
+### devcloud
 Request a compute node:
 ```
 qsub -I -l nodes=1:gpu:ppn=2 -d .
@@ -17,4 +18,13 @@ icpx -fsycl src/learner.cpp -I /glob/development-tools/versions/oneapi/2023.0.1/
 Run:
 ```
 ./a.out
+```
+
+
+### Kalu
+
+Run:
+```
+conda activate htroRLatari
+python cnn.py
 ```
