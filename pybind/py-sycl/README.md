@@ -31,13 +31,32 @@ conda activate base
 pip install pybind11
 ```
 ### Compile (PyBind)
-Build binding library:
+Build binding library (devcloud):
 ```
+#include <sycl/sycl.hpp>
+q = queue(sycl::gpu_selector{} );
 icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I /home/u186670/.local/lib/python3.9/site-packages/pybind11/include bindings_learner.cpp -o sycl_learner_module$(python3-config --extension-suffix --includes)
 ```
+
+Build binding library (kalu, 3-layer mlp):
+```
+#include <CL/sycl.hpp>
+q = queue(sycl::default_selector{} );
+$conda activate htroRL
+$icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I /home/yuan/.conda/envs/htroRL/lib/python3.8/site-packages/pybind11/include bindings_learner.cpp -o sycl_learner_module$(python3-config --extension-suffix --includes)
+```
+
+Build binding library (kalu, 4-layer mlp):
+```
+#include <CL/sycl.hpp>
+q = queue(sycl::default_selector{} );
+$conda activate htroRL
+$icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I /home/yuan/.conda/envs/htroRL/lib/python3.8/site-packages/pybind11/include bindings_learner2.cpp -o sycl_learner_module$(python3-config --extension-suffix --includes)
+```
+
 ### Run (Python)
 ```
-python test_binded_lib.py
+python test_binded_lib_learner.py
 ```
 Tested on Aug16 Devcloud, Run (Python) results same as Run (C++)
 
