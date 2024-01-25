@@ -25,7 +25,7 @@ def print_inputPT(PTdict,str_in):
     print(f"======= End {str_in} Inputs =======")
 
 def compute_mapping(PTdict):
-    T_itr=1000000000000
+    T_itr=float('inf')
     mappings=("A","B")
     for rm_device in PTdict.keys():
         for lnr_device in PTdict.keys():
@@ -54,7 +54,7 @@ def DS_mapping(BWdict,D_lnr,D_actr,D_rm,PTdict):
     assert(D_lnr in PTdict.keys())
     assert(D_actr in PTdict.keys())
     Dd=""
-    min_traffic = 100000000
+    min_traffic = float('inf')
     
     # Get the environment exp data sizes
     env = gym.make(cfg.env_name)
