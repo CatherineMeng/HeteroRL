@@ -1,10 +1,19 @@
 import csv
 import argparse
 import gym
+import json
 
 # Define the path to your input CSV file
 PT_file_path = "PT.csv"
 BW_file_path = "BW.csv"
+output_js = "mapping.json"
+
+#default
+mapping = {
+    'DS': 'CPU',
+    'RM': 'CPU',
+    'Learner': 'CPU'
+}
 
 parser = argparse.ArgumentParser(description='PyTorch DQN solution of CartPole-v0')
 
@@ -99,7 +108,7 @@ def DS_mapping(BWdict,D_lnr,D_actr,D_rm,PTdict):
         if tot_traffic<min_traffic:
             min_traffic=tot_traffic
             Dd=dev1
-            print("switching Dd to",Dd)
+            print("switching DS to",Dd)
             
     return Dd
 
@@ -133,6 +142,8 @@ if __name__ == "__main__":
     s1_results = compute_mapping(data_dict)
     print("RM mapping:",s1_results[1][0],"\nLearner mapping:",s1_results[1][1],"\nTheoretical peak throughput:",1000*cfg.train_batch_size/s1_results[0],"samples/sec")
     print("============== End Step 1 ==============")
+    mapping['RM'] = s1_results[1][0]
+    mapping['Learner'] = s1_results[1][1]
 
     bw_dict = {}  # Dictionary to store data
     with open(BW_file_path, "r") as csv_file:
@@ -158,3 +169,8 @@ if __name__ == "__main__":
     s2_result = DS_mapping(bw_dict,s1_results[1][1],"CPU",s1_results[1][0],data_dict)
     print("Data Storage mapping:",s2_result)
     print("============== End Step 2 ==============")
+    mapping['DS'] = s2_result
+
+
+    with open(output_js, 'w') as json_file:
+        json.dump(mapping, json_file)
