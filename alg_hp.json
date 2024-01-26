@@ -1,0 +1,9 @@
+{
+    "alg": "DQN", 
+    "batch_size_t": 128,
+    "batch_size_i": 64,
+    "replay_prioritized": "True",
+    "replay_size": 8192,
+    "replay_fanout": 16,
+    "env": "CartPole-v1"
+}
