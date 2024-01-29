@@ -1,0 +1,12 @@
+{
+    "num_SRAM_banks": 7110, 
+    "bits_per_SRAM": 20480,
+    "num_LogicRAM_banks": 24360,
+    "bits_per_LogicRAM": 640,
+    "num_DSPs": 4510,
+    "num_DSPs_per_MultAdd": 1,
+    "freq": 250000000,
+    "datawidth": 32,
+    "DDR_bandwdith": 77,
+    "DDR_latency": 16
+}
