@@ -5,6 +5,7 @@ import gym
 import json
 import sys
 import torch
+from SysConfig.FPGA_perfmodel import *
 
 # Load the JSON content
 with open('alg_hp.json') as f:
@@ -16,7 +17,9 @@ train_batch_size = hp["batch_size_t"]
 replay_prioritized = hp["replay_prioritized"]
 replay_size = hp["replay_size"]
 replay_fanout = hp["replay_fanout"]
-
+hidden_sizes = hp["hiddenl_sizes"]
+in_dim=hp["in_dim"]
+out_dim=hp["out_dim"]
 env = gym.make(hp["env"])
 
 # manually specify for continuous-space envs
@@ -73,9 +76,18 @@ def generate_values(device):
         ret["RP-sample"] = (time.perf_counter()-start)* 1000 #ms
 
     elif (replay_prioritized=="True" and device == "fpga"): #fpga
-        from pybind.py_sycl_fpga.replay_module import PER
-        from pybind.py_sycl_fpga.replay_module import sibit_io
-    
+        # from pybind.py_sycl_fpga.replay_module import PER
+        # from pybind.py_sycl_fpga.replay_module import sibit_io
+        json_file_path = 'fpga_spec.json'
+        with open(json_file_path, 'r') as json_file:
+            fpga_spec = json.load(json_file)
+        rm_perf = RM_perf( math.ceil(math.log(replay_size, replay_fanout)), replay_fanout, 128)
+        ret["RP-sample"] = rm_perf['s-latency(ms)']
+        ret["RP-insert"] = rm_perf['i-latency(ms)']
+        ret["RP-update"] = rm_perf['u-latency(ms)']
+        fit, l_perf = Learner_DSE([in_dim]+hidden_sizes+[out_dim], train_batch_size, fpga_spec['num_DSPs']-rm_perf['dsp_consp'], fpga_spec['num_SRAM_banks']-rm_perf['sram_consp'], fpga_spec['num_LogicRAM_banks']-rm_perf['logicram_consp'])
+        ret["LN"] = l_perf
+
     elif (replay_prioritized=="True"): #cuda gpu, any cpu
         from Libs_Torch.replay import PrioritizedReplayMemory
 
@@ -102,16 +114,17 @@ def generate_values(device):
     elif (replay_prioritized=="False"):
         from Libs_Torch.replay import ReplayMemory
 
-    # if (alg=="DQN"): # already selected in above
-    DLearner = Learner(policy_in_dim, policy_out_dim, device)
-    states = torch.rand(train_batch_size, policy_in_dim)
-    actions = torch.rand(train_batch_size)
-    next_states = torch.rand(train_batch_size, policy_in_dim)
-    rewards = torch.rand(train_batch_size)
-    dones = torch.zeros(train_batch_size)
-    start = time.perf_counter()
-    DLearner.update_all_gradients(1, states, actions, next_states, rewards, dones, False)
-    ret["LN"] = (time.perf_counter()-start)* 1000 #ms
+    if (device != "fpga"):
+        # if (alg=="DQN"): # already selected in above
+        DLearner = Learner(policy_in_dim, policy_out_dim, device)
+        states = torch.rand(train_batch_size, policy_in_dim)
+        actions = torch.rand(train_batch_size)
+        next_states = torch.rand(train_batch_size, policy_in_dim)
+        rewards = torch.rand(train_batch_size)
+        dones = torch.zeros(train_batch_size)
+        start = time.perf_counter()
+        DLearner.update_all_gradients(1, states, actions, next_states, rewards, dones, False)
+        ret["LN"] = (time.perf_counter()-start)* 1000 #ms
     
     # elif (alg=="DDPG"):
     
@@ -119,7 +132,7 @@ def generate_values(device):
 
 # List of devices
 # devices = ['cpu', 'cuda:0']
-devices = ['cpu']
+devices = ['cpu','fpga']
 # devices = ['cpu', 'igpu', 'FPGA']
 # devices = ['cpu', 'cuda:0', 'FPGA']
 
