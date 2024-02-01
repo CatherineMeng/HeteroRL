@@ -1,20 +1,5 @@
-# import replay_module
-
-# q=replay_module.create_queue()
-
-# replay_module.MyAutorun_itm<Itm1, fixed_l1, fixed_root, ProducePipe, L1_L2_Pipe, 1, Lev1_Width>(q)
-# replay_module.MyAutorun_itm<Itm2, fixed_l2, fixed_l1, L1_L2_Pipe, L2_L3_Pipe, 2, Lev2_Width>(q)
-# replay_module.MyAutorun_lastlev<Itm3,fixed_l3, fixed_l2, L2_L3_Pipe, ConsumePipe1, ConsumePipe2, ConsumePipe3, Lev3_Width>(q)
-
 from replay_module import PER
 from replay_module import sibit_io
-
-# from request_obj import *
-# from example import *
-
-# pet1=Pet("Adam")
-# pet1.setName("Alex")
-# print(pet1.getName())
 
 # manually ensure the following is equivalent to those defined in replay_cpplib.cpp
 K = 4 #fanout 
@@ -78,10 +63,6 @@ for ii in range(batchsize*4):
     in_list[ii].update_index_array[1]=(ii/K)/K
     in_list[ii].update_index_array[2]=ii/K
     in_list[ii].update_index_array[3]=ii
-    # in_list[ii].set_upd_input_index(0,0)
-    # in_list[ii].set_upd_input_index(1,(ii//K)//K)
-    # in_list[ii].set_upd_input_index(2,ii//K)
-    # in_list[ii].set_upd_input_index(3,ii)
 
     for iii in range(D):
         in_list[ii].update_offset_array[iii]=0.1
