@@ -4,6 +4,7 @@
     "batch_size_i": 64,
     "replay_prioritized": "True",
     "replay_size": 8192,
+    "replay_depth": 4,
     "replay_fanout": 16,
     "env": "CartPole-v1",
     "hiddenl_sizes":[64,64],
