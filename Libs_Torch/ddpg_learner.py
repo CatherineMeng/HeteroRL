@@ -40,7 +40,7 @@ class CriticNN(nn.Module):
         return self.value(input_state_action)
 
 
-class Learner:
+class DDPGLearner:
     def __init__(self, input_state, output_action, device='cuda'):
         self.device = device
         # self.device ='cuda' if torch.cuda.is_available() else 'cpu'
@@ -115,10 +115,10 @@ class Learner:
                 targ.data.add_((1 - Config.polyak) * mov.data)
 
     #inputs (states, actions, next_states, rewards, dones): from Replay Buffer
-    def update_all_gradients(self, n_step, states, actions, next_states, rewards, dones, bool_targ_upd):
+    def update_all_gradients(self, states, actions, next_states, rewards, dones, bool_targ_upd):
         t1=time.perf_counter()
         # Implement learning rate decay for both NNs and std decay for Random function
-        self.lr_std_decay(n_step)
+        self.lr_std_decay(30)
 
         # Calculate loss and update moving critic
         critic_loss = self.update_critic(states, actions,rewards, new_states, dones)
@@ -130,4 +130,4 @@ class Learner:
         self.critic_loss_mean.append(critic_loss)
         self.policy_loss_mean.append(policy_loss)
         t2=time.perf_counter()
-        return t2-t1
+        return t2-t1,policy_loss

@@ -36,10 +36,10 @@ env_scale = True
 
 writer_flag = False
 
-class PolicyNN(nn.Module):
+class DQNN(nn.Module):
 
   def __init__(self, input_state, output_action):
-    super(PolicyNN, self).__init__()
+    super(DQNN, self).__init__()
     # self.fc1 = nn.Linear(input_state, Config.hidden_sizes[0])
     # self.fc3 = nn.Linear(Config.hidden_sizes[0], output_action)
     self.fc1 = nn.Linear(input_state, hidden_sizes[0])
@@ -49,14 +49,19 @@ class PolicyNN(nn.Module):
     x = F.elu(self.fc1(x))
     x = self.fc3(x)
     return x
+    
+  def get_parameters_as_lists(self):
+    # Extract and convert weights and biases to lists for sycl exe
+    parameters_as_lists = [param.data.tolist() for param in self.parameters()]
+    return parameters_as_lists
 
-class Learner:
+class DQNLearner:
     def __init__(self, input_state, output_action, device='cpu'):
         self.device = device
         # self.device ='cuda' if torch.cuda.is_available() else 'cpu'
         self.action_shape = output_action
-        self.policy_nn = PolicyNN(input_state, output_action).to(self.device)
-        self.target_nn = PolicyNN(input_state, output_action).to(self.device)
+        self.policy_nn = DQNN(input_state, output_action).to(self.device)
+        self.target_nn = DQNN(input_state, output_action).to(self.device)
         self.target_nn.load_state_dict(self.policy_nn.state_dict())
 
         self.mse = torch.nn.MSELoss()
@@ -91,7 +96,7 @@ class Learner:
 
 
         #inputs (states, actions, next_states, rewards, dones): from Replay Buffer
-    def update_all_gradients(self, n_step, states, actions, next_states, rewards, dones, bool_targ_upd):
+    def update_all_gradients(self, states, actions, next_states, rewards, dones, bool_targ_upd):
         self.update_policy(states, actions, next_states, rewards, dones)
         if (bool_targ_upd):
             self.update_targets()
@@ -145,7 +150,7 @@ class Learner:
         
         t2 = time.perf_counter()
         
-        return t2 - t1
+        return t2 - t1, loss
 
 # policy_in_dim=4
 # policy_out_dim=2
