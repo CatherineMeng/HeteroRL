@@ -16,22 +16,25 @@ import numpy as np
 from multiprocessing import Process, Pipe
 # from replay import Memory
 # from replay import ReplayMemory
-from policy_dqn import DQN
+# from policy_dqn import DQN
 from itertools import count
+import sys
+import argparse
+import json
 
 import matplotlib.pyplot as plt
 
 import Libs_Torch.Config
+import Config
 # replay import
 from Libs_Torch.replay import PrioritizedReplayMemory
-from pybind.py-sycl import SumTreeNary
-# from pybind.py-sycl-fpga.replay_top import SumTreenary_FPGA
-from pybind.py-sycl-fpga import replay_top
+from pybind.pysycl.sycl_rm_module import SumTreeNary # needs lib compilation (icpx)
+
 
 # learner import 
 from Libs_Torch.dqn_learner import DQNLearner, DQNN
 from Libs_Torch.ddpg_learner import DDPGLearner, PolicyNN
-from pybind.py-sycl.sycl_learner_module import DQNTrainer, params_out
+# from pybind.pysycl.sycl_learner_module import DQNTrainer, params_out
 
 parser = argparse.ArgumentParser(description="Runtime program description")
 parser.add_argument("--mode", choices=["auto", "manual"], help="Set the system composition mode (auto or manual)", required=True)
@@ -44,7 +47,7 @@ alg = args.alg
 # === Load the mapping JSON content == #
 cpst_path = " "
 if mode == "auto":
-    cpst_path = "/SysConfig/mapping.json"
+    cpst_path = "./SysConfig/mapping.json"
 elif mode == "manual":
     cpst_path = "custom_mapping.json"
     # print("Running in manual mode")
@@ -54,7 +57,8 @@ with open(cpst_path, "r") as file:
 ds_device = data["DS"]
 rm_device = data["RM"]
 learner_device = data["Learner"]
-use_gpu = use_cuda  # Set to True to enable training using CUDA if available
+# use_gpu = use_cuda  # Set to True to enable training using CUDA if available
+use_gpu = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 
 # === Load the alg hp JSON content === #
 with open('alg_hp.json') as f:
@@ -80,32 +84,33 @@ num_training_eps = 1000
 use_cuda = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
+# Actor config.
+epsilon = 0.5
+epsilon_start = 0.9
+epsilon_end = 0.05
 # memory = Memory(10000)
 
 # === learner object creation ===
 def create_learner_actor(alg, learner_device):
     if learner_device[0:3] == "GPU" and torch.cuda.is_available():
         if alg == "DQN":
-            # from Libs_Torch.dqn_learner import DQNLearner
             return DQNLearner(in_dim, out_dim, 'cuda'), DQNN(in_dim, out_dim)
         elif alg == "DDPG":
-            # from Libs_Torch.ddpg_learner import DDPGLearner
-        return DDPGLearner(in_dim, out_dim, 'cuda'), PolicyNN(in_dim, out_dim)
-    # elif (learner_device[0:3]=="GPU" and not torch.cuda.is_available()):
+            return DDPGLearner(in_dim, out_dim, 'cuda'), PolicyNN(in_dim, out_dim)
     elif learner_device[0:3] == "CPU":
         if alg == "DQN":
             # from Libs_Torch.dqn_learner import DQNLearner
             return DQNLearner(in_dim, out_dim, 'cpu'), DQNN(in_dim, out_dim)
         elif alg == "DDPG":
             # from Libs_Torch.ddpg_learner import DDPGLearner
-        return DDPGLearner(in_dim, out_dim, 'cpu'), PolicyNN(in_dim, out_dim)
+            return DDPGLearner(in_dim, out_dim, 'cpu'), PolicyNN(in_dim, out_dim)
         # from pybind.py-sycl.sycl_learner_module import DQNTrainer
     elif (learner_device == "FPGA"):
-        # from pybind.py-sycl.sycl_learner_module_2l import DQNTrainer
         # Todo: pybind for sycl_learner_module_2l (current 3l)
+        from pybind.pysycl.sycl_learner_module import DQNTrainer, params_out
         if alg == "DQN": 
             dplcy = DQNN(in_dim, out_dim)
-            hw1, hb1, hw2, hb2 = def get_parameters_as_lists():
+            hw1, hb1, hw2, hb2 = dplcy.get_parameters_as_lists()
             return DQNTrainer(hw1, hb1, hw2, hb2)
         if alg == "DDPG":
             raise NotImplementedError("Implementing pybind for this function")
@@ -116,14 +121,14 @@ Learner, Policy_Net = create_learner_actor(alg, learner_device)
 def create_replay(rm_device):
     if (rm_device == "CPU" or (rm_device == "GPU" and torch.cuda.is_available())):
     # from Libs_Torch.replay import PrioritizedReplayMemory
-        return PrioritizedReplayMemory(replay_size)
+        return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
     elif (rm_device == "GPU" and not torch.cuda.is_available()):
-        from pybind.py-sycl.sycl_rm_module import SumTreeNary
-        from pybind.py-sycl import replay_top
+        from pybind.pysycl.sycl_rm_module import SumTreeNary
+        from pybind.pysycl import replay_top
         return replay_top(fanout, train_batch_size, inf_batch_size, replay_size)
     # from pybind.py-sycl import SumTreeNary
     elif (rm_device == "FPGA"):
-        from pybind.py-sycl-fpga import replay_top
+        from pybind.pysyclfpga import replay_top # needs lib compilation (dpcpp)
         return replay_top(fanout, replay_depth, train_batch_size, inf_batch_size, replay_size)
 
 Replay_Memory = create_replay(rm_device)
@@ -214,17 +219,19 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
     # for _ in range(num_training_eps):
         learn_itr_cnt+=1
         if (learn_itr_cnt<=num_training_eps):
-            transitions = data_transfer_conn.recv()
+            # transitions = data_transfer_conn.recv()
+            # # print("Learner itr",learn_itr_cnt,"received data from master")
+            # batch = list(zip(*transitions))
+            # # print("batch[0]:",batch[0])
+            # state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
+            # action_batch = torch.tensor(batch[1], dtype=torch.int64).to(device)
+            # reward_batch = torch.tensor(batch[2], dtype=torch.float32).to(device)
+            # next_state_batch = torch.tensor(np.array(batch[3]), dtype=torch.float32).to(device)
+            # done_batch = torch.tensor(batch[4], dtype=torch.bool).to(device)
+            state_batch, action_batch, next_state_batch, reward_batch, done_batch = data_transfer_conn.recv()
             # print("Learner itr",learn_itr_cnt,"received data from master")
-            batch = list(zip(*transitions))
-            # print("batch[0]:",batch[0])
-            state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
-            action_batch = torch.tensor(batch[1], dtype=torch.int64).to(device)
-            reward_batch = torch.tensor(batch[2], dtype=torch.float32).to(device)
-            next_state_batch = torch.tensor(np.array(batch[3]), dtype=torch.float32).to(device)
-            done_batch = torch.tensor(batch[4], dtype=torch.bool).to(device)
 
-            latency, new_prs = update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
+            latency, new_prs = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
             
             Replay_Memory.update_through([new_prs]*train_batch_size) #todo: check consistency for tensor size returned in different algs
 
@@ -262,7 +269,7 @@ def main():
 
     learner_conns = [conn[1] for conn in actor_pipes]
     # Create and start the learner process
-    learner_process_obj = Process(target=learner_process, args=(learner_conns, data_transfer_pipe[0], train_batch_size, gamma, use_gpu))
+    learner_process_obj = Process(target=learner_process, args=(learner_conns, data_transfer_pipe[0], train_batch_size, Config.gamma, use_gpu))
     learner_process_obj.start()
 
     exp_buffer =  [None]*n_actors
@@ -288,7 +295,7 @@ def main():
             new_prs=[0.1]*inf_batch_size #initial dp for insertion
             Replay_Memory.insert_through(exp_buffer,new_prs)
 
-            if (len(replay_memory) >= train_batch_size and train_cnt<num_training_eps):
+            if (Replay_Memory.get_current_size() >= train_batch_size and train_cnt<num_training_eps):
                 transitions = Replay_Memory.sample_through()
                 data_transfer_pipe[1].send(transitions)
                 train_cnt+=1

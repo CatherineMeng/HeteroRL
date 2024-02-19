@@ -1,6 +1,7 @@
 import random
 import math
 from collections import namedtuple, deque
+import torch
 '''
 Uniform distribution
 '''
@@ -99,7 +100,7 @@ class SumTree:
 
 # Prioritized Replay based on a binary sum-tree
 class PrioritizedReplayMemory:
-    def __init__(self, capacity, alpha=0.6, beta=0.4, beta_increment_per_sampling=0.001):
+    def __init__(self, capacity, train_bs, insert_bs, alpha=0.6, beta=0.4, beta_increment_per_sampling=0.001):
         self.capacity = capacity
         self.alpha = alpha
         self.beta = beta
@@ -110,6 +111,9 @@ class PrioritizedReplayMemory:
         self.data_pointer = 0
         self.epsilon = 0.01
         self.current_size = 0
+        self.tbs = train_bs
+        self.ibs = insert_bs
+        self.memoize_ind = []
 
     def get_current_size(self):
         return self.current_size
@@ -118,30 +122,33 @@ class PrioritizedReplayMemory:
     def _get_priority(self, td_error):
         return (td_error + self.epsilon) ** self.alpha
 
-    def push(self, transition, td_error):
-        priority = self._get_priority(td_error)
-        self.tree.add(priority)
-        # self.data.append(transition)
-        self.data[self.data_pointer] = transition
-        self.data_pointer = (self.data_pointer + 1) % self.capacity
-        if (self.current_size<self.capacity):
-            self.current_size+=1
-        # print("pushing data into data storage index",self.data_pointer)
+    def insert_through(self, transition, td_error):
+        for tn,te in zip(transition, td_error):
+            # priority = self._get_priority(td_error)
+            priority = te
+            self.tree.add(priority)
+            # self.data.append(tn)
+            self.data[self.data_pointer] = tn
+            self.data_pointer = (self.data_pointer + 1) % self.capacity
+            if (self.current_size<self.capacity):
+                self.current_size+=1
+            # print("pushing data into data storage index",self.data_pointer)
 
-    def sample(self, batch_size):
+    def sample_through(self):
         batch = []
-        segment = self.tree.total_priority() / batch_size
+        segment = self.tree.total_priority() / self.tbs
         priorities = []
-        indexes = []
+
+        # indexes = []
 
         self.beta = min(1.0, self.beta + self.beta_increment_per_sampling)
 
-        for i in range(batch_size):
+        for i in range(self.tbs):
             a, b = segment * i, segment * (i + 1)
             v = random.uniform(a, b)
             # get indices from sum tree
             index, priority = self.tree.get_leaf(v) #index returned are node index in the tree, not index in the data storage dict.
-            indexes.append(index)
+            self.memoize_ind.append(index)
             priorities.append(priority)
             # convert leaf ndoe index to data storage index, read from data storage
             batch.append(self.data[index - self.tree.capacity + 1]) 
@@ -152,13 +159,14 @@ class PrioritizedReplayMemory:
         # sampling_probabilities = priorities / self.tree.total_priority()
         # is_weights = np.power(self.tree.capacity * sampling_probabilities, -self.beta)
         # is_weights /= is_weights.max()
-
+        states, actions, next_states, rewards, dones = \
+            map(lambda x: torch.tensor(x).float(), zip(*batch))
         # return batch, indexes, is_weights
-        return batch, indexes
+        return states, actions, next_states, rewards, dones
 
     # index returned by sampling are node index in the tree, not index in the data storage dict.
     # Therefore, the same tree_indices (as returned by sampling) can be used for update without modification
-    def update_priorities(self, tree_indices, td_errors):
+    def update_through(self, tree_indices, td_errors):
         for tree_index, td_error in zip(tree_indices, td_errors):
             assert(tree_index >= self.tree.capacity - 1)
             assert(tree_index < 2*self.tree.capacity - 1)

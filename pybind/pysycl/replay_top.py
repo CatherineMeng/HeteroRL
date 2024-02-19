@@ -31,8 +31,9 @@ class replay_top():
         sampling_values = [0] * self.tbs
         for i in range(self.tbs):
             sampling_values[i]=(random.random() * 65)  # Generate a random float from 0 to sum_root (e.g., 65)
-            states, actions, next_states, rewards, dones = \
-            map(lambda x: torch.tensor(x).float(), zip(*self.RM.get_prefix_sum_idx_sycl(sampling_values)))
+            batch = self.RM.get_prefix_sum_idx_sycl(sampling_values)
+        states, actions, next_states, rewards, dones = \
+        map(lambda x: torch.tensor(x).float(), zip(*batch))
         return states, actions, next_states, rewards, dones
 
     # new_prs have size train_bs
