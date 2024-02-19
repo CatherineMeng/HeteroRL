@@ -1,4 +1,4 @@
-# RL_OneAPI
+# PEARL
 This is the implementation of RL using heterogeneous platform via DPC++ and Torch.
 The goal is to facilitate DRL application development with tools and familiar programming interfaces for DRL using heterogeneous platforms, while abstracting away the low-level hardware intricacies. 
 
