@@ -4,7 +4,7 @@ The goal is to facilitate DRL application development with tools and familiar pr
 
 The toolkit comprises three main components: a Host Runtime Code Template (run.py), a Parameterized Library of Accelerated Primitives (Libs_1API and Libs_Torch), and a System Composer (SysConfig).
 
-<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/PEARL_wrkflw.png" alt="drawing" width="500"/>
+<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/PEARL_wrkflw.png" alt="drawing" width="380"/>
 
 ## Dependencies
 This project uses conda to manage software dependencies.
@@ -33,10 +33,10 @@ This will generate a mapping.json for runtime composition.
 ### Step 1: Compiling PY-SYCL Libraries
 ```
 cd pybind/pysycl
-icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I /home/yuan/.conda/envs/htroRL/lib/python3.8/site-packages/pybind11/include bindings_replay.cpp -o sycl_rm_module$(python3-config --extension-suffix --includes)
+icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I <path-to-pybind11>/pybind11/include bindings_replay.cpp -o sycl_rm_module$(python3-config --extension-suffix --includes)
 
 cd ../pysyclfpga
-dpcpp -O3 -Wall -shared -std=c++17 -fintelfpga -fPIC $(python3 -m pybind11 --includes) -I /home/yuan/.conda/envs/htroRL/lib/python3.8/site-packages/pybind11/include bindings.cpp -o replay_module$(python3-config --extension-suffix --includes) -DFPGA_EMULATOR=1
+dpcpp -O3 -Wall -shared -std=c++17 -fintelfpga -fPIC $(python3 -m pybind11 --includes) -I <path-to-pybind11>/pybind11/include bindings.cpp -o replay_module$(python3-config --extension-suffix --includes) -DFPGA_EMULATOR=1
 
 cd ../..
 ```
