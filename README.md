@@ -13,6 +13,11 @@ Install all dependencies by creating a conda environment using:
 conda env create -f install_env.yml
 ```
 
+On specific heterogeneous devices, the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind:
+[Install oneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/installation-guide-for-oneapi-toolkits.html)
+
+[Install PyBind 11](https://pybind11.readthedocs.io/en/stable/installing.html)
+
 ## Usage: System Configuration
 
 Edit the device List in **PerfPopulator.py** and run
