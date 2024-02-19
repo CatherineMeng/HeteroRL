@@ -11,6 +11,7 @@ This project uses conda to manage software dependencies.
 Install all dependencies by creating a conda environment using:
 ```
 conda env create -f install_env.yml
+conda activate htroRLatari
 ```
 
 On specific heterogeneous devices, the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind:
