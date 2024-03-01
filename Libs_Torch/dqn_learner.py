@@ -79,9 +79,11 @@ class DQNLearner:
 
     def update_policy(self, states, actions, next_states, rewards, dones):
         t1=time.perf_counter()
-        state_action_values = self.policy_nn(states).gather(1, actions[:, None].long()).squeeze()
-        next_state_values = torch.max(self.target_nn(next_states), dim=1)[0].detach()
-        expected_state_action_values = rewards + next_state_values * (1 - dones) * gamma
+        state_action_values0 = self.policy_nn(states.to(self.device))
+        state_action_values1 = state_action_values0.gather(1, actions[:, None].long())
+        state_action_values = state_action_values1.squeeze().to(self.device)
+        next_state_values = torch.max(self.target_nn(next_states.to(self.device)), dim=1)[0].detach()
+        expected_state_action_values = (rewards + next_state_values * (~dones) * gamma).to(self.device)
 
         loss = F.mse_loss(state_action_values, expected_state_action_values)
 
@@ -89,7 +91,7 @@ class DQNLearner:
         loss.backward()
         self.optimizer.step()
         t2=time.perf_counter()
-        return t2-t1
+        return t2-t1, loss
 
     def update_targets(self):
         self.target_nn.load_state_dict(self.policy_nn.state_dict())
@@ -97,10 +99,10 @@ class DQNLearner:
 
         #inputs (states, actions, next_states, rewards, dones): from Replay Buffer
     def update_all_gradients(self, states, actions, next_states, rewards, dones, bool_targ_upd):
-        self.update_policy(states, actions, next_states, rewards, dones)
+        t, l = self.update_policy(states, actions, next_states, rewards, dones)
         if (bool_targ_upd):
             self.update_targets()
-
+        return t, l, self.policy_nn.state_dict()
 
     def update_network_multistream(self, states, actions, next_states, rewards, dones):
         t1 = time.perf_counter()

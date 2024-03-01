@@ -7,9 +7,11 @@ Uniform distribution
 '''
 
 class Memory(object):
-  def __init__(self, memory_size=10000):
+  def __init__(self, memory_size, train_bs, insert_bs):
     self.memory = deque(maxlen=memory_size)
     self.memory_size = memory_size
+    self.train_bs = train_bs
+    self.insert_bs = insert_bs 
 
   def __len__(self):
     return len(self.memory)
@@ -20,18 +22,33 @@ class Memory(object):
   def sample_batch(self, batch_size):
     idx = np.random.permutation(len(self.memory))[:batch_size]
     return [self.memory[i] for i in idx]
-    
+
 class ReplayMemory(object):
 
-    def __init__(self, capacity):
+    def __init__(self, capacity, train_bs, insert_bs):
         self.memory = deque([], maxlen=capacity)
+        self.train_bs = train_bs
+        self.insert_bs = insert_bs 
+
+    def get_current_size(self):
+        return len(self.memory)
 
     def push(self, transition):
         """Save a transition"""
         self.memory.append(transition)
 
+    def insert_through(self, transitions, td_error):
+        for tn in transitions:
+            self.memory.append(tn)
+
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)
+
+    def sample_through(self):
+        return random.sample(self.memory, self.train_bs)
+
+    def update_through(self, prs):
+        return 0
 
     def __len__(self):
         return len(self.memory)

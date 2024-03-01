@@ -15,7 +15,6 @@ import numpy as np
 # from torch.multiprocessing import Process, Pipe
 from multiprocessing import Process, Pipe
 # from replay import Memory
-# from replay import ReplayMemory
 # from policy_dqn import DQN
 from itertools import count
 import sys
@@ -27,6 +26,7 @@ import matplotlib.pyplot as plt
 import Libs_Torch.Config
 import Config
 # replay import
+from Libs_Torch.replay import ReplayMemory
 from Libs_Torch.replay import PrioritizedReplayMemory
 from pybind.pysycl.sycl_rm_module import SumTreeNary # needs lib compilation (icpx)
 
@@ -121,7 +121,8 @@ Learner, Policy_Net = create_learner_actor(alg, learner_device)
 def create_replay(rm_device):
     if (rm_device == "CPU" or (rm_device == "GPU" and torch.cuda.is_available())):
     # from Libs_Torch.replay import PrioritizedReplayMemory
-        return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        # return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
     elif (rm_device == "GPU" and not torch.cuda.is_available()):
         from pybind.pysycl.sycl_rm_module import SumTreeNary
         from pybind.pysycl import replay_top
@@ -170,7 +171,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
             # --- end get action --- 
             next_state, reward, done, _, _ = env.step(action)
             rewards+=reward
-            data_collection_conn.send((state, action, reward, next_state, done))
+            data_collection_conn.send([state, action, reward, next_state, done])
             state = next_state
             if (param_conn.poll()): # there is updated param to receive
                 try: 
@@ -214,30 +215,32 @@ def actor_process(param_conn, actor_id, data_collection_conn):
 # Define the function to run the learner process
 def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu):
     # print("Learner start")
+    device = "cuda" if use_gpu else "cpu"
     learn_itr_cnt=0
     while True:
     # for _ in range(num_training_eps):
         learn_itr_cnt+=1
         if (learn_itr_cnt<=num_training_eps):
-            # transitions = data_transfer_conn.recv()
+            transitions = data_transfer_conn.recv()
             # # print("Learner itr",learn_itr_cnt,"received data from master")
-            # batch = list(zip(*transitions))
+            batch = list(zip(*transitions))
             # # print("batch[0]:",batch[0])
-            # state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
-            # action_batch = torch.tensor(batch[1], dtype=torch.int64).to(device)
-            # reward_batch = torch.tensor(batch[2], dtype=torch.float32).to(device)
-            # next_state_batch = torch.tensor(np.array(batch[3]), dtype=torch.float32).to(device)
-            # done_batch = torch.tensor(batch[4], dtype=torch.bool).to(device)
-            state_batch, action_batch, next_state_batch, reward_batch, done_batch = data_transfer_conn.recv()
+            state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
+            action_batch = torch.tensor(batch[1], dtype=torch.int64).to(device)
+            reward_batch = torch.tensor(batch[2], dtype=torch.float32).to(device)
+            next_state_batch = torch.tensor(np.array(batch[3]), dtype=torch.float32).to(device)
+            done_batch = torch.tensor(batch[4], dtype=torch.bool).to(device)
+            # state_batch, action_batch, next_state_batch, reward_batch, done_batch = data_transfer_conn.recv()
             # print("Learner itr",learn_itr_cnt,"received data from master")
 
-            latency, new_prs = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
+            latency, new_prs, new_params = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
             
             Replay_Memory.update_through([new_prs]*train_batch_size) #todo: check consistency for tensor size returned in different algs
 
             # Send back the updated policy network parameters to the actors
             for param_conn in param_conns:
-                param_conn.send(policy_net.state_dict())
+                param_conn.send(new_params)
+                # param_conn.send(policy_net.state_dict())
             # print("Learner itr",learn_itr_cnt,"sent updated params to actors")
         
         else:
@@ -275,10 +278,8 @@ def main():
     exp_buffer =  [None]*n_actors
     # Training loop
     try:
-        # for i in range(10000):  # You can adjust the number of training episodes here
         train_cnt=0
         n_actors_done = 0
-        # while(1):
         while (n_actors_done == 0):
             # replay insertion
             for i,pipe in enumerate(data_collection_pipes):
@@ -295,7 +296,7 @@ def main():
             new_prs=[0.1]*inf_batch_size #initial dp for insertion
             Replay_Memory.insert_through(exp_buffer,new_prs)
 
-            if (Replay_Memory.get_current_size() >= train_batch_size and train_cnt<num_training_eps):
+            if (Replay_Memory.get_current_size() >= 2*train_batch_size and train_cnt<num_training_eps):
                 transitions = Replay_Memory.sample_through()
                 data_transfer_pipe[1].send(transitions)
                 train_cnt+=1
@@ -333,4 +334,5 @@ def main():
         learner_process_obj.join()
 
 if __name__ == '__main__':
+    torch.multiprocessing.set_start_method('spawn')
     main()

@@ -47,7 +47,7 @@ last_score_plot = [0]*cfg.max_episode
 avg_score_plot = [0]*cfg.max_episode
 
 
-env = gym.make('CartPole-v0')
+env = gym.make('CartPole-v1')
 
 
 class Memory(object):
