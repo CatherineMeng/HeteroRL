@@ -121,8 +121,8 @@ Learner, Policy_Net = create_learner_actor(alg, learner_device)
 def create_replay(rm_device):
     if (rm_device == "CPU" or (rm_device == "GPU" and torch.cuda.is_available())):
     # from Libs_Torch.replay import PrioritizedReplayMemory
-        # return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
-        return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        # return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
     elif (rm_device == "GPU" and not torch.cuda.is_available()):
         from pybind.pysycl.sycl_rm_module import SumTreeNary
         from pybind.pysycl import replay_top

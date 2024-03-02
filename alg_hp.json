@@ -9,5 +9,5 @@
     "env": "CartPole-v1",
     "hiddenl_sizes":[64,64],
     "in_dim":4,
-    "out_dim":1
+    "out_dim":2
 }

@@ -176,15 +176,15 @@ class PrioritizedReplayMemory:
         # sampling_probabilities = priorities / self.tree.total_priority()
         # is_weights = np.power(self.tree.capacity * sampling_probabilities, -self.beta)
         # is_weights /= is_weights.max()
-        states, actions, next_states, rewards, dones = \
-            map(lambda x: torch.tensor(x).float(), zip(*batch))
-        # return batch, indexes, is_weights
-        return states, actions, next_states, rewards, dones
+        # states, actions, next_states, rewards, dones = \
+        #     map(lambda x: torch.tensor(x).float(), zip(*batch))
+        return batch
+        # return states, actions, next_states, rewards, dones
 
     # index returned by sampling are node index in the tree, not index in the data storage dict.
     # Therefore, the same tree_indices (as returned by sampling) can be used for update without modification
-    def update_through(self, tree_indices, td_errors):
-        for tree_index, td_error in zip(tree_indices, td_errors):
+    def update_through(self, td_errors):
+        for tree_index, td_error in zip(self.memoize_ind, td_errors):
             assert(tree_index >= self.tree.capacity - 1)
             assert(tree_index < 2*self.tree.capacity - 1)
             priority = self._get_priority(td_error)
