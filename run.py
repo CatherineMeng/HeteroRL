@@ -38,7 +38,7 @@ from Libs_Torch.ddpg_learner import DDPGLearner, PolicyNN
 
 parser = argparse.ArgumentParser(description="Runtime program description")
 parser.add_argument("--mode", choices=["auto", "manual"], help="Set the system composition mode (auto or manual)", required=True)
-parser.add_argument("--alg", choices=["DQN", "DDPG"], help="Set the target algorithm", required=True)
+parser.add_argument("--alg", choices=["DQN", "DDPG"], help="Set the target algorithm", required=False)
 
 args = parser.parse_args()
 mode = args.mode
@@ -73,7 +73,7 @@ replay_fanout = hp["replay_fanout"]
 hidden_sizes = hp["hiddenl_sizes"]
 in_dim=hp["in_dim"]
 out_dim=hp["out_dim"]
-env = gym.make(hp["env"])
+env_name = hp["env"]
 lr = 1e-3
 
 # === System Parallel Parameters === #
@@ -121,8 +121,10 @@ Learner, Policy_Net = create_learner_actor(alg, learner_device)
 def create_replay(rm_device):
     if (rm_device == "CPU" or (rm_device == "GPU" and torch.cuda.is_available())):
     # from Libs_Torch.replay import PrioritizedReplayMemory
-        return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
-        # return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        if (replay_prioritized):
+            return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
+        else:
+            return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
     elif (rm_device == "GPU" and not torch.cuda.is_available()):
         from pybind.pysycl.sycl_rm_module import SumTreeNary
         from pybind.pysycl import replay_top
@@ -142,7 +144,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
     #     print("USING GPU")
     # else:
     device = torch.device("cpu")
-    env = gym.make('CartPole-v1')
+    env = gym.make(env_name)
     policy_net = Policy_Net.to(device)
     print("=== actor", actor_id,"started")
     p_update_cnt=0
@@ -240,8 +242,6 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             # Send back the updated policy network parameters to the actors
             for param_conn in param_conns:
                 param_conn.send(new_params)
-                # param_conn.send(policy_net.state_dict())
-            # print("Learner itr",learn_itr_cnt,"sent updated params to actors")
         
         else:
             print("Learner: Train Episodes finished, waiting for master")
