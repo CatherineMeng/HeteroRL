@@ -121,7 +121,7 @@ Learner, Policy_Net = create_learner_actor(alg, learner_device)
 def create_replay(rm_device):
     if (rm_device == "CPU" or (rm_device == "GPU" and torch.cuda.is_available())):
     # from Libs_Torch.replay import PrioritizedReplayMemory
-        if (replay_prioritized):
+        if (replay_prioritized=="True"):
             return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
         else:
             return ReplayMemory(replay_size, train_batch_size, inf_batch_size)

@@ -2,7 +2,7 @@
     "alg": "DDPG", 
     "batch_size_t": 128,
     "batch_size_i": 64,
-    "replay_prioritized": "False",
+    "replay_prioritized": "True",
     "replay_size": 8192,
     "replay_depth": 4,
     "replay_fanout": 16,
