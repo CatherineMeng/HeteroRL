@@ -1,7 +1,5 @@
 import datetime
 
-# env_name = "LunarLanderContinuous-v2"
-
 seed = 0
 test_episodes = 100
 test_every = 50000

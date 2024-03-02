@@ -1,0 +1,13 @@
+{
+    "alg": "DDPG", 
+    "batch_size_t": 128,
+    "batch_size_i": 64,
+    "replay_prioritized": "False",
+    "replay_size": 8192,
+    "replay_depth": 4,
+    "replay_fanout": 16,
+    "env": "MountainCarContinuous-v0",
+    "hiddenl_sizes":[64,64],
+    "in_dim":2,
+    "out_dim":1
+}

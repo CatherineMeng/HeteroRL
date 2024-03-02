@@ -79,8 +79,9 @@ class DDPGLearner:
         # Calculate target with reward and estimated value from Q function of new state. If its the end of the episode
         # calculate target only with reward. Also erase gradients from target tensors because we want to update
         # only moving critic NN.
-        target = rewards + Config.gamma * target_values * (1 - dones)
-        state_values = self.moving_critic_nn(states, actions).squeeze(-1)
+        target = rewards + Config.gamma * target_values * (~dones)
+        bs = actions.size(dim=0)
+        state_values = self.moving_critic_nn(states, actions.view(bs,1)).squeeze(-1)
         critic_loss = self.mse(state_values, target)
 
         self.critic_nn_optim.zero_grad()
@@ -108,11 +109,11 @@ class DDPGLearner:
                 # NB: We use an in-place operations "mul_", "add_" to update target
                 # params, as opposed to "mul" and "add", which would make new tensors.
                 targ.data.mul_(Config.polyak)
-                targ.data.add_((1 - Config.polyak) * mov.data)
+                targ.data.add_((1-Config.polyak) * mov.data)
 
             for mov, targ in zip(self.moving_policy_nn.parameters(), self.target_policy_nn.parameters()):
                 targ.data.mul_(Config.polyak)
-                targ.data.add_((1 - Config.polyak) * mov.data)
+                targ.data.add_((1-Config.polyak) * mov.data)
 
     #inputs (states, actions, next_states, rewards, dones): from Replay Buffer
     def update_all_gradients(self, states, actions, next_states, rewards, dones, bool_targ_upd):
@@ -121,13 +122,13 @@ class DDPGLearner:
         self.lr_std_decay(30)
 
         # Calculate loss and update moving critic
-        critic_loss = self.update_critic(states, actions,rewards, new_states, dones)
+        critic_loss = self.update_critic(states, actions,rewards, next_states, dones)
         # Calculate loss and update moving policy
         policy_loss = self.update_policy(states)
         # Update target policy and critic to slowly follow moving NNs with polyak averaging
         if (bool_targ_upd):
             self.update_targets()
-        self.critic_loss_mean.append(critic_loss)
-        self.policy_loss_mean.append(policy_loss)
+        # self.critic_loss_mean.append(critic_loss)
+        # self.policy_loss_mean.append(policy_loss)
         t2=time.perf_counter()
-        return t2-t1,policy_loss
+        return t2-t1,policy_loss,self.moving_policy_nn.state_dict()

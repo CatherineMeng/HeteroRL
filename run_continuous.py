@@ -61,8 +61,7 @@ learner_device = data["Learner"]
 use_gpu = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 
 # === Load the alg hp JSON content === #
-# with open('alg_hp.json') as f:
-with open('alg_hp.json') as f:
+with open('alg_hp2.json') as f:
     hp = json.load(f)
 alg = hp["alg"]
 inf_batch_size = hp["batch_size_i"]
@@ -172,7 +171,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
             if (np.random.rand() < epsilon):
                 action = random_action
             # --- end get action --- 
-            next_state, reward, done, _, _ = env.step(action)
+            next_state, reward, done, _, _ = env.step([action])
             rewards+=reward
             data_collection_conn.send([state, action, reward, next_state, done])
             state = next_state
@@ -235,14 +234,15 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             done_batch = torch.tensor(batch[4], dtype=torch.bool).to(device)
             # state_batch, action_batch, next_state_batch, reward_batch, done_batch = data_transfer_conn.recv()
             # print("Learner itr",learn_itr_cnt,"received data from master")
-
+            # print("here, itr",learn_itr_cnt)
             latency, new_prs, new_params = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
-            
+            # print("Learner.update_all_gradients")
             Replay_Memory.update_through([new_prs]*train_batch_size) #todo: check consistency for tensor size returned in different algs
 
             # Send back the updated policy network parameters to the actors
-            for param_conn in param_conns:
-                param_conn.send(new_params)
+            if (learn_itr_cnt%10 ==0):
+                for param_conn in param_conns:
+                    param_conn.send(new_params)
         
         else:
             print("Learner: Train Episodes finished, waiting for master")
@@ -309,7 +309,6 @@ def main():
         data_transfer_pipe[1].send(None)
         data_transfer_pipe[0].close()
 
-        # print("Here")
         learner_process_obj.join()
         print("learner_process_obj joined")
 
@@ -319,7 +318,6 @@ def main():
             while pipe[0].poll(timeout=1):
                 pipe[0].recv()
             pipe[0].close()
-        print("Here")
         for ap in actor_processes:
             ap.join()
         # ap.terminate()
