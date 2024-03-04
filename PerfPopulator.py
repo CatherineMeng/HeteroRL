@@ -115,7 +115,6 @@ def pred_values(device):
         from Libs_Torch.replay import ReplayMemory
 
     if (device != "fpga"):
-        # if (alg=="DQN"): # already selected in above
         DLearner = DQNLearner(policy_in_dim, policy_out_dim, device)
         states = torch.rand(train_batch_size, policy_in_dim)
         actions = torch.rand(train_batch_size)
@@ -125,9 +124,7 @@ def pred_values(device):
         start = time.perf_counter()
         DLearner.update_all_gradients(states, actions, next_states, rewards, dones, False)
         ret["LN"] = (time.perf_counter()-start)* 1000 #ms
-    
-    # elif (alg=="DDPG"):
-    
+
     return list(ret.values())
 
 # List of devices
@@ -165,4 +162,4 @@ for device in devices:
         writer = csv.writer(file)
         writer.writerow([device] + values)
 
-print(f"data has been written to {csv_file}")
+print(f"Profiled/Predicted performance data has been written to {csv_file}")

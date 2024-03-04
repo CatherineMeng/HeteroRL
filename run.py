@@ -49,7 +49,7 @@ cpst_path = " "
 if mode == "auto":
     cpst_path = "./SysConfig/mapping.json"
 elif mode == "manual":
-    cpst_path = "custom_mapping.json"
+    cpst_path = "custom_mapping1.json"
     # print("Running in manual mode")
 
 with open(cpst_path, "r") as file:
