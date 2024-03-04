@@ -1,7 +1,6 @@
 '''
-Policy objects are only put on learner process.
-Replay is managed on master, can be offloaded to accelerator_replay
-Learner has its separate thread, can be offloaded to a different accelerator than accelerator_replay
+Policy objects are managed by the learner process, which can be offloaded to an accelerator.
+Replay is managed on master thread, can be offloaded to accelerator_replay
 ''' 
 
 import time
@@ -12,10 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import multiprocessing
 import numpy as np
-# from torch.multiprocessing import Process, Pipe
 from multiprocessing import Process, Pipe
-# from replay import Memory
-# from policy_dqn import DQN
 from itertools import count
 import sys
 import argparse
@@ -38,19 +34,23 @@ from Libs_Torch.ddpg_learner import DDPGLearner, PolicyNN
 
 parser = argparse.ArgumentParser(description="Runtime program description")
 parser.add_argument("--mode", choices=["auto", "manual"], help="Set the system composition mode (auto or manual)", required=True)
-parser.add_argument("--alg", choices=["DQN", "DDPG"], help="Set the target algorithm", required=False)
+parser.add_argument("--algspec", help="Path to the JSON file containing algorithm specifications", required=True)
+parser.add_argument("--mappingspec", help="Path to the JSON file containing mapping specifications", required=False)
 
 args = parser.parse_args()
 mode = args.mode
-alg = args.alg
+algspec_path = args.algspec
+mappingspec_path = args.mappingspec
 
 # === Load the mapping JSON content == #
 cpst_path = " "
 if mode == "auto":
     cpst_path = "./SysConfig/mapping.json"
 elif mode == "manual":
-    cpst_path = "custom_mapping2.json"
-    # print("Running in manual mode")
+    # cpst_path = "custom_mapping2.json"
+    if mappingspec_path is None:
+        parser.error("--mappingspec is required in manual mode")
+    cpst_path = mappingspec_path
 
 with open(cpst_path, "r") as file:
     data = json.load(file)
@@ -61,7 +61,8 @@ learner_device = data["Learner"]
 use_gpu = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 
 # === Load the alg hp JSON content === #
-with open('alg_hp2.json') as f:
+# with open('alg_hp2.json') as f:
+with open(algspec_path) as f:
     hp = json.load(f)
 alg = hp["alg"]
 inf_batch_size = hp["batch_size_i"]
@@ -78,7 +79,7 @@ lr = 1e-3
 
 # === System Parallel Parameters === #
 n_actors = 4
-inf_batch_size = n_actors #Todo: generalize this (inf_batch_size for exp_buffer)
+inf_batch_size = n_actors
 num_training_eps = 1000
 
 use_cuda = learner_device[0:3] == "GPU" and torch.cuda.is_available()
@@ -106,7 +107,6 @@ def create_learner_actor(alg, learner_device):
             return DDPGLearner(in_dim, out_dim, 'cpu'), PolicyNN(in_dim, out_dim)
         # from pybind.py-sycl.sycl_learner_module import DQNTrainer
     elif (learner_device == "FPGA"):
-        # Todo: pybind for sycl_learner_module_2l (current 3l)
         from pybind.pysycl.sycl_learner_module import DQNTrainer, params_out
         if alg == "DQN": 
             dplcy = DQNN(in_dim, out_dim)
@@ -218,13 +218,15 @@ def actor_process(param_conn, actor_id, data_collection_conn):
 def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu):
     # print("Learner start")
     device = "cuda" if use_gpu else "cpu"
-    learn_itr_cnt=0
+    learn_itr_cnt = 0
+    sum_train_lat = 0
     while True:
     # for _ in range(num_training_eps):
         learn_itr_cnt+=1
         if (learn_itr_cnt<=num_training_eps):
             transitions = data_transfer_conn.recv()
             # # print("Learner itr",learn_itr_cnt,"received data from master")
+            t_start = time.perf_counter()
             batch = list(zip(*transitions))
             # # print("batch[0]:",batch[0])
             state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
@@ -237,15 +239,16 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             # print("here, itr",learn_itr_cnt)
             latency, new_prs, new_params = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
             # print("Learner.update_all_gradients")
-            Replay_Memory.update_through([new_prs]*train_batch_size) #todo: check consistency for tensor size returned in different algs
-
+            Replay_Memory.update_through([new_prs]*train_batch_size)
             # Send back the updated policy network parameters to the actors
             if (learn_itr_cnt%10 ==0):
                 for param_conn in param_conns:
                     param_conn.send(new_params)
+            sum_train_lat += time.perf_counter()-t_start
         
         else:
             print("Learner: Train Episodes finished, waiting for master")
+            print("Effective throughput:",batch_size/(sum_train_lat/learn_itr_cnt),"samples/second")
             transitions = data_transfer_conn.recv()
             if (transitions=="Train done from master"):
                 print("Learner: Train Done")
@@ -290,8 +293,8 @@ def main():
                     data_transfer_pipe[1].send("Train done from master")
                     print("============REACHED MAIN BREAK============")
                     t_end = time.perf_counter()
-                    print("total time for",num_training_eps,"training epiodes:",t_end-t_start)
-                    # break 
+                    # print("total time for",num_training_eps,"training epiodes:",t_end-t_start)
+                    break 
                 else: # replay insertion
                     exp_buffer[i] = sample
             new_prs=[0.1]*inf_batch_size #initial dp for insertion

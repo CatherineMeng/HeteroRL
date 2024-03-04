@@ -35,19 +35,25 @@ from Libs_Torch.ddpg_learner import DDPGLearner, PolicyNN
 
 parser = argparse.ArgumentParser(description="Runtime program description")
 parser.add_argument("--mode", choices=["auto", "manual"], help="Set the system composition mode (auto or manual)", required=True)
-parser.add_argument("--alg", choices=["DQN", "DDPG"], help="Set the target algorithm", required=False)
+# parser.add_argument("--alg", choices=["DQN", "DDPG"], help="Set the target algorithm", required=False)
+parser.add_argument("--algspec", help="Path to the JSON file containing algorithm specifications", required=True)
+parser.add_argument("--mappingspec", help="Path to the JSON file containing mapping specifications", required=False)
+
 
 args = parser.parse_args()
 mode = args.mode
-alg = args.alg
+algspec_path = args.algspec
+mappingspec_path = args.mappingspec
 
 # === Load the mapping JSON content == #
 cpst_path = " "
 if mode == "auto":
     cpst_path = "./SysConfig/mapping.json"
 elif mode == "manual":
-    cpst_path = "custom_mapping1.json"
-    # print("Running in manual mode")
+    # cpst_path = "custom_mapping2.json"
+    if mappingspec_path is None:
+        parser.error("--mappingspec is required in manual mode")
+    cpst_path = mappingspec_path
 
 with open(cpst_path, "r") as file:
     data = json.load(file)
@@ -59,7 +65,7 @@ use_gpu = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 
 # === Load the alg hp JSON content === #
 # with open('alg_hp.json') as f:
-with open('alg_hp.json') as f:
+with open(algspec_path) as f:
     hp = json.load(f)
 alg = hp["alg"]
 inf_batch_size = hp["batch_size_i"]
