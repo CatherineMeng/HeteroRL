@@ -1,7 +1,6 @@
 '''
-Policy objects are only put on learner process.
-Replay is managed on master, can be offloaded to accelerator_replay
-Learner has its separate thread, can be offloaded to a different accelerator than accelerator_replay
+Policy objects are managed by the learner process, which can be offloaded to an accelerator.
+Replay is managed on master thread, can be offloaded to accelerator_replay
 ''' 
 
 import time
@@ -14,8 +13,6 @@ import multiprocessing
 import numpy as np
 # from torch.multiprocessing import Process, Pipe
 from multiprocessing import Process, Pipe
-# from replay import Memory
-# from policy_dqn import DQN
 from itertools import count
 import sys
 import argparse
@@ -79,8 +76,8 @@ lr = 1e-3
 
 # === System Parallel Parameters === #
 n_actors = 4
-inf_batch_size = n_actors #Todo: generalize this (inf_batch_size for exp_buffer)
-num_training_eps = 1000
+inf_batch_size = n_actors 
+num_training_eps = 4000
 
 use_cuda = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -89,7 +86,6 @@ FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 epsilon = 0.5
 epsilon_start = 0.9
 epsilon_end = 0.05
-# memory = Memory(10000)
 
 # === learner object creation ===
 def create_learner_actor(alg, learner_device):
@@ -107,7 +103,6 @@ def create_learner_actor(alg, learner_device):
             return DDPGLearner(in_dim, out_dim, 'cpu'), PolicyNN(in_dim, out_dim)
         # from pybind.py-sycl.sycl_learner_module import DQNTrainer
     elif (learner_device == "FPGA"):
-        # Todo: pybind for sycl_learner_module_2l (current 3l)
         from pybind.pysycl.sycl_learner_module import DQNTrainer, params_out
         if alg == "DQN": 
             dplcy = DQNN(in_dim, out_dim)
@@ -193,7 +188,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
                     policy_net.load_state_dict(parameters)
                     
                     
-            if done or t==200:
+            if done or t==800:
                 episode_durations = t + 1
                 avg_score_plot[i]=(avg_score_plot[i-1] * 0.99 + episode_durations * 0.01)
                 last_score_plot[i]=(episode_durations)
@@ -220,12 +215,15 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
     # print("Learner start")
     device = "cuda" if use_gpu else "cpu"
     learn_itr_cnt=0
+    sum_train_lat = 0
     while True:
     # for _ in range(num_training_eps):
         learn_itr_cnt+=1
         if (learn_itr_cnt<=num_training_eps):
+            
             transitions = data_transfer_conn.recv()
             # # print("Learner itr",learn_itr_cnt,"received data from master")
+            t_start = time.perf_counter()
             batch = list(zip(*transitions))
             # # print("batch[0]:",batch[0])
             state_batch = torch.tensor(np.array(batch[0]), dtype=torch.float32).to(device)
@@ -236,16 +234,19 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             # state_batch, action_batch, next_state_batch, reward_batch, done_batch = data_transfer_conn.recv()
             # print("Learner itr",learn_itr_cnt,"received data from master")
 
+            
             latency, new_prs, new_params = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
             
-            Replay_Memory.update_through([new_prs]*train_batch_size) #todo: check consistency for tensor size returned in different algs
+
+            Replay_Memory.update_through([new_prs]*train_batch_size)
 
             # Send back the updated policy network parameters to the actors
             for param_conn in param_conns:
                 param_conn.send(new_params)
-        
+            sum_train_lat += time.perf_counter()-t_start
         else:
             print("Learner: Train Episodes finished, waiting for master")
+            print("Effective throughput:",batch_size/(sum_train_lat/learn_itr_cnt),"samples/second")
             transitions = data_transfer_conn.recv()
             if (transitions=="Train done from master"):
                 print("Learner: Train Done")
@@ -290,8 +291,7 @@ def main():
                     data_transfer_pipe[1].send("Train done from master")
                     print("============REACHED MAIN BREAK============")
                     t_end = time.perf_counter()
-                    print("total time for",num_training_eps,"training epiodes:",t_end-t_start)
-                    # break 
+                    # print("total time for",num_training_eps,"training epiodes:",t_end-t_start)
                 else: # replay insertion
                     exp_buffer[i] = sample
             new_prs=[0.1]*inf_batch_size #initial dp for insertion
@@ -309,7 +309,6 @@ def main():
         data_transfer_pipe[1].send(None)
         data_transfer_pipe[0].close()
 
-        # print("Here")
         learner_process_obj.join()
         print("learner_process_obj joined")
 
@@ -319,7 +318,7 @@ def main():
             while pipe[0].poll(timeout=1):
                 pipe[0].recv()
             pipe[0].close()
-        print("Here")
+
         for ap in actor_processes:
             ap.join()
         # ap.terminate()
