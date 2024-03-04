@@ -36,12 +36,12 @@ policy_out_dim = 2
 # Learner on CPU, GPU, FPGA
 if (alg=="DQN"):
     # sys.path.append('../../Libs_Torch')
-    from Libs_Torch.dqn_learner import Learner
+    from Libs_Torch.dqn_learner import DQNLearner
 elif (alg=="DDPG"):
-    from Libs_Torch.ddpg_learner import Learner
+    from Libs_Torch.ddpg_learner import DDPGLearner
 
-# Function to generate values for a given device
-def generate_values(device):
+# Function to generate (profile / predict) latency values for a given device
+def pred_values(device):
     ret ={"RP-update":0,"RP-insert":0,"RP-sample":0,"LN":0,"RPLN-RP-update":0,"RPLN-RP-insert":0,"RPLN-RP-sample":0,"RPLN-LN":0}
     if (replay_prioritized=="True" and device == "igpu"): #integrated gpu
         from pybind.py_sycl.sycl_rm_module import SumTreeNary
@@ -91,7 +91,7 @@ def generate_values(device):
     elif (replay_prioritized=="True"): #cuda gpu, any cpu
         from Libs_Torch.replay import PrioritizedReplayMemory
 
-        prmem = PrioritizedReplayMemory(replay_size)
+        prmem = PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
 
         tree_indices = torch.rand(train_batch_size)
         M = replay_size-1
@@ -99,16 +99,16 @@ def generate_values(device):
         tree_indices_scaled = (tree_indices * (N-M)+M).floor().long().numpy()
         td_errors = torch.rand(train_batch_size).numpy()
         start = time.perf_counter()
-        prmem.update_priorities(tree_indices_scaled, td_errors)
+        prmem.update_through(td_errors)
         ret["RP-update"] = (time.perf_counter()-start)* 1000 #ms
 
         start = time.perf_counter()
-        sbc = prmem.sample(train_batch_size)
+        sbc = prmem.sample_through()
         ret["RP-sample"] = (time.perf_counter()-start)* 1000 #ms
 
         transition=torch.rand(train_batch_size)
         start = time.perf_counter()
-        prmem.push(transition, td_errors)
+        prmem.insert_through(transition, td_errors)
         ret["RP-insert"] = (time.perf_counter()-start)* 1000 #ms
 
     elif (replay_prioritized=="False"):
@@ -116,14 +116,14 @@ def generate_values(device):
 
     if (device != "fpga"):
         # if (alg=="DQN"): # already selected in above
-        DLearner = Learner(policy_in_dim, policy_out_dim, device)
+        DLearner = DQNLearner(policy_in_dim, policy_out_dim, device)
         states = torch.rand(train_batch_size, policy_in_dim)
         actions = torch.rand(train_batch_size)
         next_states = torch.rand(train_batch_size, policy_in_dim)
         rewards = torch.rand(train_batch_size)
-        dones = torch.zeros(train_batch_size)
+        dones = torch.zeros(train_batch_size).bool()
         start = time.perf_counter()
-        DLearner.update_all_gradients(1, states, actions, next_states, rewards, dones, False)
+        DLearner.update_all_gradients(states, actions, next_states, rewards, dones, False)
         ret["LN"] = (time.perf_counter()-start)* 1000 #ms
     
     # elif (alg=="DDPG"):
@@ -150,7 +150,7 @@ with open(csv_file, 'w', newline='') as file:
 # Generating and writing hp for each device
 for device in devices:
     # Generate values for the device
-    values = generate_values(device)
+    values = pred_values(device)
     # print("values:",values)
     if (device=="cpu" or device[0:3]=="cuda" or device=="igpu"):
         for i in range(4,8): 
