@@ -6,7 +6,7 @@ The toolkit comprises three main components: a Host Runtime Code Template (run.p
 
 <img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/PEARL_wrkflw.png" alt="drawing" width="380"/>
 
-## Dependencies
+## Dependencies & Installation
 This project uses conda to manage software dependencies.
 Install all dependencies by creating a conda environment using:
 ```
@@ -15,6 +15,7 @@ conda activate htroRLatari
 ```
 
 On specific heterogeneous devices (e.g., FPGAs, integrated GPUs), the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind:
+
 [Install oneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/installation-guide-for-oneapi-toolkits.html)
 
 [Install PyBind 11](https://pybind11.readthedocs.io/en/stable/installing.html)
