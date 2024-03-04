@@ -114,16 +114,47 @@ Data Storage mapping: CPU
 ```
 
 ### Runtime Program
+The following are two minimal examples for running DQN in the CartPole environment and DDPG in the MountainCar environment.
+The algorithm specifications and mapping specifications to be passed into the program are already created in the corresponding json files shown in the comman line arguments.
+
 Example 1: Run DQN - CartPole
 ```
-python run.py --mode manual
+python run.py --algspec 'alg_hp.json' --mode manual --mappingspec 'custom_mapping1.json'
 ```
 This program can be extended to other benchmarks with discrete action space.
 
 Example 2: Run DDPG - MountainCar
 ```
-python run_continuous.py --mode manual
+python run_continuous.py --algspec 'alg_hp2.json' --mode manual --mappingspec 'custom_mapping2.json'
 ```
 This program can be extended to other benchmarks with continuous action space.
 
-The outputs include a training thourghput report in the console and a plot of rewards for all actors.
+Note: 
+To test the runtime program on other algorithm/benchmarks, the entries "alg", "env", "hiddenl_sizes", "in_dim", and "out_dim" in alg_hp.json needs to be correctly modified.
+To test the runtime program on reconfigurable platforms, do "Step 1 (Optional): Compiling PY-SYCL Libraries" above and make sure the design parameters in the SYCL header files algins correctly with the entries in alg_hp.json before running the runtime program. 
+
+The outputs in the console should look something like 
+```
+=== actor 0 started
+=== actor 2 started
+=== actor 3 started
+=== actor 1 started
+Learner: Train Episodes finished, waiting for master
+Effective throughput: 8900.22082046502 samples/second
+***=== Actor 2 DONE TESTING
+============REACHED MAIN BREAK============
+Learner: Train Done
+Terminate the actor processes and learner process
+***=== Actor 0 DONE TESTING
+Plotted for Actor2.png
+Plotted for Actor0.png
+learner_process_obj joined
+***=== Actor 1 DONE TESTING
+Plotted for Actor1.png
+***=== Actor 3 DONE TESTING
+Plotted for Actor3.png
+actor_processes joined
+```
+The output plots should look something like (example: DQN-CartPole)
+
+<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/scores_actor_dqn.png" alt="drawing" width="190"/>
