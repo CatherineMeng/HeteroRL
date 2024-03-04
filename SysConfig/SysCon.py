@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     print("\n======== Step 1 Compute->Device ========")
     s1_results = compute_mapping(data_dict)
-    print("RM mapping:",s1_results[1][0],"\nLearner mapping:",s1_results[1][1],"\nTheoretical peak throughput:",1000*cfg.train_batch_size/s1_results[0],"samples/sec")
+    print("RM mapping:",s1_results[1][0],"\nLearner mapping:",s1_results[1][1],"\nTheoretical peak throughput:",cfg.train_batch_size/s1_results[0],"samples/sec")
     print("============== End Step 1 ==============")
     mapping['RM'] = s1_results[1][0]
     mapping['Learner'] = s1_results[1][1]
