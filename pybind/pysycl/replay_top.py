@@ -6,7 +6,7 @@ import torch
 
 
 class replay_top():
-    def __init__(self, fanout, train_bs, insert_bs, memory_size=10000):
+    def __init__(self, fanout, train_bs, insert_bs, memory_size=8000):
         self.RM = SumTreeNary(memory_size, fanout) 
         self.memory = {key: None for key in range(memory_size)} #data storage
         self.memory_size = memory_size
@@ -19,19 +19,23 @@ class replay_top():
     def __len__(self):
         return len(self.memory)
 
+    def get_current_size(self):
+        return self.curr_ind
+
     # in both sum tree and data storage
     # indices, items and new_prs have size insert_bs
     # each item will follow the format [state, action, next_state, reward, done]
     def insert_through(self, items, new_prs):
         indices = [None] * self.ibs
-        if (self.curr_ind + self.ibs < self.memory_size):
-            self.curr_ind += self.ibs
-        else:
-            self.curr_ind =0
+
         for i,item in enumerate(items):
             self.memory[self.curr_ind + i] = item
             indices[i]=self.curr_ind + i
         self.RM.set(indices,new_prs)
+        if (self.curr_ind + self.ibs < self.memory_size):
+            self.curr_ind += self.ibs
+        # else:
+        #     self.curr_ind =0
 
     def sample_through(self):
         batch = []
