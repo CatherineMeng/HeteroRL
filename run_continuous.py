@@ -112,8 +112,6 @@ def create_learner_actor(alg, learner_device):
             dplcy = DQNN(in_dim, out_dim)
             hw1, hb1, hw2, hb2 = dplcy.get_parameters_as_lists()
             return DQNTrainer(hw1, hb1, hw2, hb2)
-        if alg == "DDPG":
-            raise NotImplementedError("Implementing pybind for this function")
 
 Learner, Policy_Net = create_learner_actor(alg, learner_device)
 

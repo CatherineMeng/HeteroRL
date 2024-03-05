@@ -15,6 +15,7 @@ import numpy as np
 from multiprocessing import Process, Pipe
 from itertools import count
 import sys
+sys.path.append("./pybind/pysycl")
 import argparse
 import json
 
@@ -25,7 +26,7 @@ import Config
 # replay import
 from Libs_Torch.replay import ReplayMemory
 from Libs_Torch.replay import PrioritizedReplayMemory
-from pybind.pysycl.sycl_rm_module import SumTreeNary # needs lib compilation (icpx)
+# from pybind.pysycl.sycl_rm_module import SumTreeNary # needs lib compilation (icpx)
 
 
 # learner import 
@@ -73,7 +74,7 @@ train_batch_size = hp["batch_size_t"]
 replay_prioritized = hp["replay_prioritized"]
 replay_size = hp["replay_size"]
 replay_depth = hp["replay_depth"]
-replay_fanout = hp["replay_fanout"]
+fanout = hp["replay_fanout"]
 hidden_sizes = hp["hiddenl_sizes"]
 in_dim=hp["in_dim"]
 out_dim=hp["out_dim"]
@@ -114,8 +115,6 @@ def create_learner_actor(alg, learner_device):
             dplcy = DQNN(in_dim, out_dim)
             hw1, hb1, hw2, hb2 = dplcy.get_parameters_as_lists()
             return DQNTrainer(hw1, hb1, hw2, hb2)
-        if alg == "DDPG":
-            raise NotImplementedError("Implementing pybind for this function")
 
 Learner, Policy_Net = create_learner_actor(alg, learner_device)
 
@@ -127,14 +126,14 @@ def create_replay(rm_device):
             return PrioritizedReplayMemory(replay_size, train_batch_size, inf_batch_size)
         else:
             return ReplayMemory(replay_size, train_batch_size, inf_batch_size)
-    elif (rm_device == "GPU" and not torch.cuda.is_available()):
-        from pybind.pysycl.sycl_rm_module import SumTreeNary
-        from pybind.pysycl import replay_top
+    elif (rm_device == "GPU" and not torch.cuda.is_available() or rm_device == "FPGA"):
+        # from pybind.pysycl.sycl_rm_module import SumTreeNary
+        from pybind.pysycl.replay_top import replay_top
         return replay_top(fanout, train_batch_size, inf_batch_size, replay_size)
     # from pybind.py-sycl import SumTreeNary
-    elif (rm_device == "FPGA"):
-        from pybind.pysyclfpga import replay_top # needs lib compilation (dpcpp)
-        return replay_top(fanout, replay_depth, train_batch_size, inf_batch_size, replay_size)
+    # elif (rm_device == "FPGA"):
+    #     from pybind.pysyclfpga import replay_top # needs lib compilation (dpcpp)
+    #     return replay_top(fanout, replay_depth, train_batch_size, inf_batch_size, replay_size)
 
 Replay_Memory = create_replay(rm_device)
 
