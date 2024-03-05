@@ -83,3 +83,9 @@ $icpx -shared -std=c++17 -fsycl -fPIC $(python3 -m pybind11 --includes) -I /home
 python test_binded_lib_rm.py
 ```
 Tested on Aug21 on Kalu, Run (Python) results same as Run (C++)
+
+## Example Usage Synthetic Test - Runtime Program
+Use the pre-compiled .so object (sycl_rm_module.cpython-38-x86_64-linux-gnu.so), run
+```
+python replay_top.py
+```
