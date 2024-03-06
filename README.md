@@ -18,14 +18,21 @@ conda activate htroRLatari
 
 *Optional:*
 
- On specific heterogeneous devices (e.g., FPGAs, integrated GPUs), the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind:
+On specific heterogeneous devices (e.g., FPGAs, integrated GPUs), the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind before creating the Conda environment:
 
 [Install oneAPI](https://www.intel.com/content/www/us/en/developer/articles/guide/installation-guide-for-oneapi-toolkits.html)
 
 [Install PyBind 11](https://pybind11.readthedocs.io/en/stable/installing.html)
 
+Add the following lines to the in the installation file (install_env.yml):
+```
+  - file://<installation path to>/intel/oneapi/conda_channel
+  - <installation path to>/intel/oneapi/conda_channel
+```
+Then, install other dependencies the same way as above.
+
 ## Example Usage
-The following example demonstrates (1) using the system composer on a hypothetical CPU()-FPGA() platform to generate a mapping result (mapping_out.json), and (2) runtime deployment of two DRL algorithms (DQN and DDPG) in two example benchmarks based on different mapping results using a CPU-GPU platform.
+The following example demonstrates (1) using the system composer on a hypothetical CPU-FPGA platform to generate a mapping result (mapping_out.json), and (2) runtime deployment of two DRL algorithms (DQN and DDPG) in two example benchmarks based on different mapping results using a CPU-GPU platform.
 
 ### System Composer
 Run the following to execute the script which invokes the System Composer: 
@@ -76,31 +83,13 @@ Note:
 To test the runtime program on other algorithm/benchmarks, the entries "alg", "env", "hiddenl_sizes", "in_dim", and "out_dim" in alg_hp.json needs to be correctly modified.
 To test the runtime program on reconfigurable platforms, do "Step 1 (Optional): Compiling PY-SYCL Libraries" above and make sure the design parameters in the SYCL header files algins correctly with the entries in alg_hp.json before running the runtime program. 
 
-The outputs in the console should look something like 
-```
-=== actor 0 started
-=== actor 2 started
-=== actor 3 started
-=== actor 1 started
-Learner: Train Episodes finished, waiting for master
-Effective throughput: 8900.22082046502 samples/second
-***=== Actor 2 DONE TESTING
-============REACHED MAIN BREAK============
-Learner: Train Done
-Terminate the actor processes and learner process
-***=== Actor 0 DONE TESTING
-Plotted for Actor2.png
-Plotted for Actor0.png
-learner_process_obj joined
-***=== Actor 1 DONE TESTING
-Plotted for Actor1.png
-***=== Actor 3 DONE TESTING
-Plotted for Actor3.png
-actor_processes joined
-```
-The output plots should look something like (example: DQN-CartPole)
+The outputs in the console should look something like the following (obtained console outputs from an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz CPU)
 
-<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/scores_actor_dqn.png" alt="drawing" width="220"/>
+<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/console_out.jpg" alt="drawing" width="270"/>
+
+The output plots should look something like the following (DQN-CartPole, obtained console outputs from an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz CPU):
+
+<img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/scores_actor_dqn.png" alt="drawing" width="240"/>
 
 
 ## General Usage Instructions

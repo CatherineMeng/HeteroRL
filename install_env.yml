@@ -2,8 +2,6 @@ name: htroRLatari
 channels:
   - pytorch
   - nvidia
-  - file:///opt/intel/oneapi/conda_channel
-  - /opt/intel/oneapi/conda_channel
   - intel
   - defaults
 dependencies:
