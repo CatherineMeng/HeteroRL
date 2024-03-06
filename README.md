@@ -81,7 +81,7 @@ This program can be extended to other benchmarks with continuous action space.
 
 Note: 
 To test the runtime program on other algorithm/benchmarks, the entries "alg", "env", "hiddenl_sizes", "in_dim", and "out_dim" in alg_hp.json needs to be correctly modified.
-To test the runtime program on reconfigurable platforms, do "Step 1 (Optional): Compiling PY-SYCL Libraries" above and make sure the design parameters in the SYCL header files algins correctly with the entries in alg_hp.json before running the runtime program. 
+To test the runtime program on reconfigurable platforms, refer to "Step 1 (Optional): Compiling PY-SYCL Libraries" below and make sure the design parameters in the SYCL header files algins correctly with the entries in alg_hp.json before running the runtime program. 
 
 The outputs in the console should look something like the following (obtained console outputs from an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz CPU)
 
@@ -91,6 +91,7 @@ The output plots should look something like the following (DQN-CartPole, obtaine
 
 <img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/scores_actor_dqn.png" alt="drawing" width="240"/>
 
+Note that this example plot shows a short operating example and cuts off training at 2000 gradient steps. For full convergence to the optimal reward, increase the "num\_training\_eps" to >100K.
 
 ## General Usage Instructions
 This section details the general usage of PEARL on arbitrary algorithms and CPU-GPU-FPGA platforms.
