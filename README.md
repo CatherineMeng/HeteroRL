@@ -87,7 +87,7 @@ The outputs in the console should look something like the following (obtained co
 
 <img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/console_out.jpg" alt="drawing" width="270"/>
 
-The output plots should look something like the following (DQN-CartPole, obtained console outputs from an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz CPU):
+The output plots should look something like the following (DQN-CartPole, obtained image outputs from an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz CPU):
 
 <img src="https://github.com/CatherineMeng/HeteroRL/blob/main/images/scores_actor_dqn.png" alt="drawing" width="240"/>
 
