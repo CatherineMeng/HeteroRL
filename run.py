@@ -84,7 +84,7 @@ lr = 1e-3
 # === System Parallel Parameters === #
 n_actors = 4
 inf_batch_size = n_actors 
-num_training_eps = 4000
+num_training_eps = 100
 
 use_cuda = learner_device[0:3] == "GPU" and torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -150,12 +150,13 @@ def actor_process(param_conn, actor_id, data_collection_conn):
     print("=== actor", actor_id,"started")
     p_update_cnt=0
     flag_break_outer=0
-    avg_score_plot = [0]*(num_training_eps*2+1)
-    last_score_plot = [0]*(num_training_eps*2+1)
+    avg_score_plot = [0]*(num_training_eps*5+1)
+    last_score_plot = [0]*(num_training_eps*5+1)
     i=0 #count num episodes
     # while True:
     while not flag_break_outer:
-        state = env.reset()[0]
+        # state = env.reset()[0] #old gym version
+        state = env.reset()
         done = False
         # run one episode 
         rewards=0  
@@ -163,6 +164,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
         epsilon = epsilon_end - epsilon_start * (i / num_training_eps) + epsilon_start
         # while not done:
         for t in count():
+
             state_tensor = torch.tensor(state, dtype=torch.float32)
             action_probs = policy_net(state_tensor)
             # --- get action ---
@@ -172,7 +174,8 @@ def actor_process(param_conn, actor_id, data_collection_conn):
             if (np.random.rand() < epsilon):
                 action = random_action
             # --- end get action --- 
-            next_state, reward, done, _, _ = env.step(action)
+            # next_state, reward, done, _, _ = env.step(action) #old gym version
+            next_state, reward, done, _ = env.step(action)
             rewards+=reward
             data_collection_conn.send([state, action, reward, next_state, done])
             state = next_state
@@ -181,13 +184,13 @@ def actor_process(param_conn, actor_id, data_collection_conn):
                     parameters = param_conn.recv()  # Receive policy network parameters from the learner
                 except (FileNotFoundError):
                     # FileNotFoundError: [Errno 2] No such file or directory
-                    print('Skipped param sync.') 
+                    print('Skipping param sync.') 
                 except (ConnectionResetError):
                     # ConnectionResetError: [Errno 104] Connection reset by peer
-                    print('Connection reset by peer.') 
+                    print('Connection reset by peer, Learner stopped. Skipping param sync.') 
                 except (EOFError):
                     # raise EOFError
-                    print('Pipe closed, EOFError.') 
+                    print('Pipe closed. Skipping param sync.') 
                 if parameters is not None:
                     # print("=== actor", actor_id,"=== received updated params from learner after Learner itr",p_update_cnt)
                     policy_net.load_state_dict(parameters)
@@ -201,7 +204,7 @@ def actor_process(param_conn, actor_id, data_collection_conn):
                 p_update_cnt+=1
                 break
 
-        if (p_update_cnt == num_training_eps*2):
+        if (p_update_cnt == num_training_eps*5):
             print("***=== Actor", actor_id,"DONE TESTING")
             data_collection_conn.send("Adone")
             flag_break_outer=1
@@ -242,16 +245,17 @@ def learner_process(param_conns, data_transfer_conn, batch_size, gamma, use_gpu)
             
             latency, new_prs, new_params = Learner.update_all_gradients(state_batch, action_batch, next_state_batch, reward_batch, done_batch, learn_itr_cnt%10==0)
             
-
             Replay_Memory.update_through([new_prs]*train_batch_size)
 
             # Send back the updated policy network parameters to the actors
-            for param_conn in param_conns:
-                param_conn.send(new_params)
+            if (learn_itr_cnt%10 ==0):
+                for param_conn in param_conns:
+                    param_conn.send(new_params)
             sum_train_lat += time.perf_counter()-t_start
+            print("Train episode",learn_itr_cnt,", Running throughput:",batch_size/(sum_train_lat/(learn_itr_cnt+1)),"samples/second")
         else:
             print("Learner: Train Episodes finished, waiting for master")
-            print("Effective throughput:",batch_size/(sum_train_lat/learn_itr_cnt),"samples/second")
+            
             transitions = data_transfer_conn.recv()
             if (transitions=="Train done from master"):
                 print("Learner: Train Done")
