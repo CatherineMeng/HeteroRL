@@ -16,6 +16,14 @@ conda env create -f install_env.yml
 conda activate htroRLatari
 ```
 
+Note: if an error from box2d-py unable to recognize the command 'swig' occurs during env create, please manually install swig and create the conda environment again:
+```
+pip install swig
+conda env remove --name htroRLatari
+conda env create -f install_env.yml
+conda activate htroRLatari
+```
+
 *Optional:*
 
 On specific heterogeneous devices (e.g., FPGAs, integrated GPUs), the primitive implementations are pulled from sycl programs wrapped in Python interfaces. To utilize these features, install oneAPI and PyBind before creating the Conda environment:

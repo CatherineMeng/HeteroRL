@@ -152,8 +152,8 @@ def actor_process(param_conn, actor_id, data_collection_conn):
     i=0 #count num episodes
     # while True:
     while not flag_break_outer:
-        # state = env.reset()[0] #old gym version
-        state = env.reset()
+        state = env.reset()[0] #old gym version
+        # state = env.reset()
         done = False
         # run one episode 
         rewards=0  
@@ -170,8 +170,8 @@ def actor_process(param_conn, actor_id, data_collection_conn):
             if (np.random.rand() < epsilon):
                 action = random_action
             # --- end get action --- 
-            # next_state, reward, done, _, _ = env.step([action]) #old gym version
-            next_state, reward, done, _ = env.step([action])
+            next_state, reward, done, _, _ = env.step([action]) #old gym version
+            # next_state, reward, done, _ = env.step([action])
             rewards+=reward
             data_collection_conn.send([state, action, reward, next_state, done])
             state = next_state
