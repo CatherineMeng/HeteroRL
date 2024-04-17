@@ -1,4 +1,7 @@
 # PEARL
+
+<a href="https://zenodo.org/doi/10.5281/zenodo.10982989"><img src="https://zenodo.org/badge/607371605.svg" alt="DOI"></a>
+
 This is the implementation of RL using heterogeneous platform via DPC++ (sycl) and Torch.
 The goal is to facilitate DRL application development with tools and familiar programming interfaces for DRL using heterogeneous platforms, while abstracting away the low-level hardware intricacies. 
 
